@@ -89,7 +89,20 @@ class YouTubeTranscriptCli:
         if parsed_args.translate:
             transcript = transcript.translate(parsed_args.translate)
 
-        return transcript.fetch()
+        fetched = transcript.fetch()
+
+        start = parsed_args.start_time if parsed_args.start_time is not None else 0.0
+        end = parsed_args.end_time if parsed_args.end_time is not None else float("inf")
+        if parsed_args.start_time is not None or parsed_args.end_time is not None:
+            fetched = fetched.filter_by_time_range(start, end)
+
+        if parsed_args.keyword:
+            fetched = fetched.filter_by_keyword(parsed_args.keyword)
+
+        if parsed_args.merge_snippets:
+            fetched = fetched.merge_continuous_snippets()
+
+        return fetched
 
     def _parse_args(self):
         parser = argparse.ArgumentParser(
@@ -175,6 +188,31 @@ class YouTubeTranscriptCli:
             default="",
             metavar="URL",
             help="Use the specified HTTPS proxy.",
+        )
+        parser.add_argument(
+            "--start-time",
+            type=float,
+            default=None,
+            help="Only include transcript snippets starting after this time (seconds).",
+        )
+        parser.add_argument(
+            "--end-time",
+            type=float,
+            default=None,
+            help="Only include transcript snippets starting before this time (seconds).",
+        )
+        parser.add_argument(
+            "--keyword",
+            type=str,
+            default="",
+            help="Filter transcript snippets to those containing this keyword.",
+        )
+        parser.add_argument(
+            "--merge-snippets",
+            action="store_const",
+            const=True,
+            default=False,
+            help="Merge continuous transcript snippets before output.",
         )
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.

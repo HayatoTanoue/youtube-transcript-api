@@ -71,6 +71,102 @@ class FetchedTranscript:
     def to_raw_data(self) -> List[Dict]:
         return [asdict(snippet) for snippet in self]
 
+    def filter_by_time_range(
+        self, start_time: float, end_time: float
+    ) -> "FetchedTranscript":
+        """Return a new ``FetchedTranscript`` containing only snippets within the
+        provided time range.
+
+        ``start_time`` is inclusive, ``end_time`` is exclusive. If ``start_time``
+        is greater than ``end_time`` an empty transcript is returned.
+        """
+
+        if start_time > end_time:
+            filtered_snippets: List[FetchedTranscriptSnippet] = []
+        else:
+            filtered_snippets = [
+                snippet
+                for snippet in self.snippets
+                if start_time <= snippet.start < end_time
+            ]
+
+        return FetchedTranscript(
+            snippets=filtered_snippets,
+            video_id=self.video_id,
+            language=self.language,
+            language_code=self.language_code,
+            is_generated=self.is_generated,
+        )
+
+    def filter_by_keyword(
+        self, keyword: str, case_sensitive: bool = False
+    ) -> "FetchedTranscript":
+        """Return a new ``FetchedTranscript`` containing only snippets whose
+        text includes ``keyword``.
+
+        If ``case_sensitive`` is ``False`` (the default) the comparison is made
+        case insensitively.
+        """
+
+        if keyword == "":
+            filtered_snippets = list(self.snippets)
+        else:
+            if case_sensitive:
+                filtered_snippets = [
+                    snippet for snippet in self.snippets if keyword in snippet.text
+                ]
+            else:
+                kw_lower = keyword.lower()
+                filtered_snippets = [
+                    snippet
+                    for snippet in self.snippets
+                    if kw_lower in snippet.text.lower()
+                ]
+
+        return FetchedTranscript(
+            snippets=filtered_snippets,
+            video_id=self.video_id,
+            language=self.language,
+            language_code=self.language_code,
+            is_generated=self.is_generated,
+        )
+
+    def merge_continuous_snippets(self, max_gap: float = 0.5) -> "FetchedTranscript":
+        """Merge consecutive snippets if the gap between them does not exceed
+        ``max_gap`` seconds.
+        """
+
+        if not self.snippets:
+            merged_snippets: List[FetchedTranscriptSnippet] = []
+        else:
+            merged_snippets = []
+            current = FetchedTranscriptSnippet(
+                text=self.snippets[0].text,
+                start=self.snippets[0].start,
+                duration=self.snippets[0].duration,
+            )
+            for snippet in self.snippets[1:]:
+                gap = snippet.start - (current.start + current.duration)
+                if gap <= max_gap:
+                    current.text += " " + snippet.text
+                    current.duration = snippet.start + snippet.duration - current.start
+                else:
+                    merged_snippets.append(current)
+                    current = FetchedTranscriptSnippet(
+                        text=snippet.text,
+                        start=snippet.start,
+                        duration=snippet.duration,
+                    )
+            merged_snippets.append(current)
+
+        return FetchedTranscript(
+            snippets=merged_snippets,
+            video_id=self.video_id,
+            language=self.language,
+            language_code=self.language_code,
+            is_generated=self.is_generated,
+        )
+
 
 @dataclass
 class _TranslationLanguage:
