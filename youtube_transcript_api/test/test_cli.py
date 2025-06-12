@@ -41,6 +41,16 @@ class TestYouTubeTranscriptCli(TestCase):
                 video_id="GJLlxj_dtq8",
             )
         )
+        self.fetched_transcript = self.transcript_mock.fetch.return_value
+        self.fetched_transcript.filter_by_time_range = MagicMock(
+            return_value=self.fetched_transcript
+        )
+        self.fetched_transcript.filter_by_keyword = MagicMock(
+            return_value=self.fetched_transcript
+        )
+        self.fetched_transcript.merge_continuous_snippets = MagicMock(
+            return_value=self.fetched_transcript
+        )
         self.transcript_mock.translate = MagicMock(return_value=self.transcript_mock)
 
         self.transcript_list_mock = MagicMock()
@@ -233,6 +243,15 @@ class TestYouTubeTranscriptCli(TestCase):
         self.assertTrue(parsed_args.exclude_manually_created)
         self.assertTrue(parsed_args.exclude_generated)
 
+    def test_argument_parsing__filters(self):
+        parsed_args = YouTubeTranscriptCli(
+            "v1 --start-time 1.0 --end-time 3.0 --keyword test --merge-snippets".split()
+        )._parse_args()
+        self.assertEqual(parsed_args.start_time, 1.0)
+        self.assertEqual(parsed_args.end_time, 3.0)
+        self.assertEqual(parsed_args.keyword, "test")
+        self.assertTrue(parsed_args.merge_snippets)
+
     def test_run(self):
         YouTubeTranscriptCli("v1 v2 --languages de en".split()).run()
 
@@ -278,6 +297,15 @@ class TestYouTubeTranscriptCli(TestCase):
         (YouTubeTranscriptCli("v1 v2 --languages de en --translate cz".split()).run(),)
 
         self.transcript_mock.translate.assert_any_call("cz")
+
+    def test_run__filters(self):
+        YouTubeTranscriptCli(
+            "v1 --start-time 1.0 --end-time 2.0 --keyword test --merge-snippets".split()
+        ).run()
+
+        self.fetched_transcript.filter_by_time_range.assert_any_call(1.0, 2.0)
+        self.fetched_transcript.filter_by_keyword.assert_any_call("test")
+        self.fetched_transcript.merge_continuous_snippets.assert_any_call()
 
     def test_run__list_transcripts(self):
         YouTubeTranscriptCli("--list-transcripts v1 v2".split()).run()
@@ -333,7 +361,7 @@ class TestYouTubeTranscriptCli(TestCase):
     )
     def test_run__cookies(self):
         YouTubeTranscriptCli(
-            ("v1 v2 --languages de en " "--cookies blahblah.txt").split()
+            ("v1 v2 --languages de en --cookies blahblah.txt").split()
         ).run()
 
         YouTubeTranscriptApi.__init__.assert_any_call(
