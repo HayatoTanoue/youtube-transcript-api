@@ -10,6 +10,7 @@ from youtube_transcript_api.formatters import (
     Formatter,
     JSONFormatter,
     TextFormatter,
+    CSVFormatter,
     SRTFormatter,
     WebVTTFormatter,
     PrettyPrintFormatter,
@@ -141,6 +142,21 @@ class TestFormatters(TestCase):
             content,
             formatted_single_transcript + "\n\n\n" + formatted_single_transcript,
         )
+
+    def test_csv_formatter(self):
+        content = CSVFormatter().format_transcript(self.transcript)
+        lines = content.split("\n")
+
+        self.assertEqual(lines[0], "text,start,duration")
+        self.assertEqual(lines[1].split(","), [self.transcript_raw[0]["text"], str(self.transcript_raw[0]["start"]), str(self.transcript_raw[0]["duration"])])
+
+    def test_csv_formatter_many(self):
+        formatter = CSVFormatter()
+        content = formatter.format_transcripts(self.transcripts)
+        lines = [l for l in content.split("\n") if l]
+        # header + 2 transcripts * len(snippets)
+        expected_rows = 1 + len(self.transcript_raw) * len(self.transcripts)
+        self.assertEqual(len(lines), expected_rows)
 
     def test_formatter_loader(self):
         loader = FormatterLoader()
