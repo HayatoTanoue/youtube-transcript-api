@@ -1,4 +1,6 @@
 import json
+import csv
+import io
 
 import pprint
 from typing import List, Iterable
@@ -65,6 +67,23 @@ class JSONFormatter(Formatter):
         return json.dumps(
             [transcript.to_raw_data() for transcript in transcripts], **kwargs
         )
+
+
+class CSVFormatter(Formatter):
+    def _format(self, transcripts: Iterable[FetchedTranscript], **kwargs) -> str:
+        output = io.StringIO(newline="")
+        writer = csv.writer(output, lineterminator="\n", **kwargs)
+        writer.writerow(["text", "start", "duration"])
+        for transcript in transcripts:
+            for snippet in transcript:
+                writer.writerow([snippet.text, snippet.start, snippet.duration])
+        return output.getvalue()
+
+    def format_transcript(self, transcript: FetchedTranscript, **kwargs) -> str:
+        return self._format([transcript], **kwargs)
+
+    def format_transcripts(self, transcripts: List[FetchedTranscript], **kwargs) -> str:
+        return self._format(transcripts, **kwargs)
 
 
 class TextFormatter(Formatter):
@@ -184,6 +203,7 @@ class FormatterLoader:
         "text": TextFormatter,
         "webvtt": WebVTTFormatter,
         "srt": SRTFormatter,
+        "csv": CSVFormatter,
     }
 
     class UnknownFormatterType(Exception):
