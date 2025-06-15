@@ -1,5 +1,5 @@
 import warnings
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Dict
 
 from requests import Session
 
@@ -64,6 +64,23 @@ class YouTubeTranscriptApi:
             .find_transcript(languages)
             .fetch(preserve_formatting=preserve_formatting)
         )
+
+    def fetch_bulk(
+        self,
+        video_ids: Iterable[str],
+        languages: Iterable[str] = ("en",),
+        preserve_formatting: bool = False,
+        max_workers: int = 5,
+    ) -> Dict[str, FetchedTranscript]:
+        """Fetch transcripts for multiple videos in parallel."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _single(v_id: str) -> FetchedTranscript:
+            return self.fetch(v_id, languages, preserve_formatting)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(_single, video_ids))
+        return dict(zip(video_ids, results))
 
     def list(
         self,
