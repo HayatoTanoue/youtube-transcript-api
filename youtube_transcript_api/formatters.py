@@ -1,4 +1,6 @@
 import json
+import csv
+import io
 
 import pprint
 from typing import List, Iterable
@@ -82,6 +84,29 @@ class TextFormatter(Formatter):
         :param transcripts:
         :return: all transcript text lines separated by newline breaks.
         """
+        return "\n\n\n".join(
+            [self.format_transcript(transcript, **kwargs) for transcript in transcripts]
+        )
+
+
+class CSVFormatter(Formatter):
+    def format_transcript(self, transcript: FetchedTranscript, **kwargs) -> str:
+        """Converts a transcript into CSV format including a header."""
+        output = io.StringIO()
+        writer = csv.writer(output, **kwargs)
+        writer.writerow(["start_time", "end_time", "duration", "text"])
+        for snippet in transcript:
+            writer.writerow(
+                [
+                    snippet.start,
+                    snippet.start + snippet.duration,
+                    snippet.duration,
+                    snippet.text,
+                ]
+            )
+        return output.getvalue().strip("\n")
+
+    def format_transcripts(self, transcripts: List[FetchedTranscript], **kwargs) -> str:
         return "\n\n\n".join(
             [self.format_transcript(transcript, **kwargs) for transcript in transcripts]
         )
@@ -184,6 +209,7 @@ class FormatterLoader:
         "text": TextFormatter,
         "webvtt": WebVTTFormatter,
         "srt": SRTFormatter,
+        "csv": CSVFormatter,
     }
 
     class UnknownFormatterType(Exception):

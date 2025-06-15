@@ -2,6 +2,8 @@ import pytest
 from unittest import TestCase
 from unittest.mock import MagicMock
 
+import csv
+
 import json
 
 from youtube_transcript_api import (
@@ -152,6 +154,17 @@ class TestYouTubeTranscriptCli(TestCase):
         self.assertEqual(parsed_args.format, "json")
         self.assertEqual(parsed_args.languages, ["en"])
 
+    def test_argument_parsing__csv(self):
+        parsed_args = YouTubeTranscriptCli("v1 v2 --format csv".split())._parse_args()
+        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
+        self.assertEqual(parsed_args.format, "csv")
+        self.assertEqual(parsed_args.languages, ["en"])
+
+        parsed_args = YouTubeTranscriptCli("--format csv v1 v2".split())._parse_args()
+        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
+        self.assertEqual(parsed_args.format, "csv")
+        self.assertEqual(parsed_args.languages, ["en"])
+
     def test_argument_parsing__languages(self):
         parsed_args = YouTubeTranscriptCli(
             "v1 v2 --languages de en".split()
@@ -293,6 +306,20 @@ class TestYouTubeTranscriptCli(TestCase):
         # will fail if output is not valid json
         json.loads(output)
 
+    def test_run__csv_output(self):
+        output = YouTubeTranscriptCli(
+            "v1 v2 --languages de en --format csv".split()
+        ).run()
+
+        rows = list(
+            csv.reader(
+                output.splitlines()[
+                    -(len(self.transcript_mock.fetch.return_value) + 1) :
+                ]
+            )
+        )
+        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
+
     def test_run__webshare_proxy_config(self):
         YouTubeTranscriptCli(
             (
@@ -333,7 +360,7 @@ class TestYouTubeTranscriptCli(TestCase):
     )
     def test_run__cookies(self):
         YouTubeTranscriptCli(
-            ("v1 v2 --languages de en " "--cookies blahblah.txt").split()
+            ("v1 v2 --languages de en --cookies blahblah.txt").split()
         ).run()
 
         YouTubeTranscriptApi.__init__.assert_any_call(
