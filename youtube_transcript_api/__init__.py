@@ -5,6 +5,7 @@ from ._transcripts import (
     Transcript,
     FetchedTranscript,
     FetchedTranscriptSnippet,
+    SearchResult,
 )
 from ._errors import (
     YouTubeTranscriptApiException,

@@ -1,6 +1,6 @@
 import pytest
 from unittest import TestCase
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import json
 
@@ -9,6 +9,7 @@ from youtube_transcript_api import (
     VideoUnavailable,
     FetchedTranscript,
     FetchedTranscriptSnippet,
+    SearchResult,
 )
 from youtube_transcript_api._cli import YouTubeTranscriptCli
 
@@ -43,6 +44,12 @@ class TestYouTubeTranscriptCli(TestCase):
         )
         self.transcript_mock.translate = MagicMock(return_value=self.transcript_mock)
 
+        self.search_patch = patch(
+            "youtube_transcript_api._transcripts.FetchedTranscript.search_in_transcript",
+            MagicMock(return_value=[]),
+        )
+        self.mock_search = self.search_patch.start()
+
         self.transcript_list_mock = MagicMock()
         self.transcript_list_mock.find_generated_transcript = MagicMock(
             return_value=self.transcript_mock
@@ -56,6 +63,9 @@ class TestYouTubeTranscriptCli(TestCase):
 
         YouTubeTranscriptApi.__init__ = MagicMock(return_value=None)
         YouTubeTranscriptApi.list = MagicMock(return_value=self.transcript_list_mock)
+
+    def tearDown(self):
+        self.search_patch.stop()
 
     def test_argument_parsing(self):
         parsed_args = YouTubeTranscriptCli(
@@ -95,6 +105,17 @@ class TestYouTubeTranscriptCli(TestCase):
         self.assertEqual(parsed_args.languages, ["de", "en"])
         self.assertEqual(parsed_args.http_proxy, "http://user:pass@domain:port")
         self.assertEqual(parsed_args.https_proxy, "https://user:pass@domain:port")
+
+        parsed_args = YouTubeTranscriptCli("v1 --search test".split())._parse_args()
+        self.assertEqual(parsed_args.search, "test")
+        self.assertFalse(parsed_args.regex)
+        self.assertFalse(parsed_args.case_sensitive)
+
+        parsed_args = YouTubeTranscriptCli(
+            "v1 --search test --regex --case-sensitive".split()
+        )._parse_args()
+        self.assertTrue(parsed_args.regex)
+        self.assertTrue(parsed_args.case_sensitive)
 
         parsed_args = YouTubeTranscriptCli(
             "v1 v2 --languages de en --format json "
@@ -279,6 +300,33 @@ class TestYouTubeTranscriptCli(TestCase):
 
         self.transcript_mock.translate.assert_any_call("cz")
 
+    def test_run__search(self):
+        self.mock_search.return_value = [
+            SearchResult(
+                matched_text="test",
+                start=0.0,
+                end=1.54,
+                context_before="",
+                context_after="",
+            )
+        ]
+
+        output = YouTubeTranscriptCli("v1 --search test".split()).run()
+
+        self.mock_search.assert_called_with(
+            "test",
+            regex=False,
+            case_sensitive=False,
+        )
+        self.assertIn("0.00-1.54s", output)
+
+    def test_run__search_no_results(self):
+        self.mock_search.return_value = []
+
+        output = YouTubeTranscriptCli("v1 --search missing".split()).run()
+
+        self.assertIn("No matches found.", output)
+
     def test_run__list_transcripts(self):
         YouTubeTranscriptCli("--list-transcripts v1 v2".split()).run()
 
@@ -333,7 +381,7 @@ class TestYouTubeTranscriptCli(TestCase):
     )
     def test_run__cookies(self):
         YouTubeTranscriptCli(
-            ("v1 v2 --languages de en " "--cookies blahblah.txt").split()
+            ("v1 v2 --languages de en --cookies blahblah.txt").split()
         ).run()
 
         YouTubeTranscriptApi.__init__.assert_any_call(

@@ -223,6 +223,17 @@ transcript.fetch()
 
 This returns a `FetchedTranscript` object, just like `YouTubeTranscriptApi().fetch()` does.
 
+### Search transcript
+
+You can search within a transcript for keywords or regular expressions:
+
+```python
+transcript = ytt_api.fetch(video_id)
+results = transcript.search_in_transcript("python")
+for result in results:
+    print(f"{result.start}s: {result.matched_text}")
+```
+
 ### Translate transcript
 
 YouTube has a feature which allows you to automatically translate subtitles. This module also makes it possible to 
@@ -487,7 +498,13 @@ Translating transcripts using the CLI is also possible:
 
 ```  
 youtube_transcript_api <first_video_id> <second_video_id> ... --languages en --translate de
-```  
+```
+
+Searching within transcripts can be done as well:
+
+```
+youtube_transcript_api <video_id> --search "machine learning" --case-sensitive
+```
 
 If you are not sure which languages are available for a given video you can call, to list all available transcripts:
 
