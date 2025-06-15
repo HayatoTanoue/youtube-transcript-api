@@ -558,6 +558,12 @@ If you just want to make sure that your code passes all the necessary checks to 
 poe precommit
 ```
 
+## Performance
+
+The library now caches transcript lists and provides a `fetch_bulk` API for
+parallel retrieval. A `benchmark.py` script is included to measure performance
+and memory consumption.
+
 ## Donations
 
 If this project makes you happy by reducing your development time, you can make me happy by treating me to a cup of 

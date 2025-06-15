@@ -10,6 +10,7 @@ from defusedxml import ElementTree
 import re
 
 from requests import HTTPError, Session, Response
+from functools import lru_cache
 
 from .proxies import ProxyConfig
 from ._settings import WATCH_URL, INNERTUBE_CONTEXT, INNERTUBE_API_URL
@@ -31,7 +32,7 @@ from ._errors import (
 )
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscriptSnippet:
     text: str
     start: float
@@ -46,7 +47,7 @@ class FetchedTranscriptSnippet:
     """
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscript:
     """
     Represents a fetched transcript. This object is iterable, which allows you to
@@ -72,7 +73,7 @@ class FetchedTranscript:
         return [asdict(snippet) for snippet in self]
 
 
-@dataclass
+@dataclass(slots=True)
 class _TranslationLanguage:
     language: str
     language_code: str
@@ -348,6 +349,10 @@ class TranscriptListFetcher:
         self._proxy_config = proxy_config
 
     def fetch(self, video_id: str) -> TranscriptList:
+        return self._cached_fetch(video_id)
+
+    @lru_cache(maxsize=128)
+    def _cached_fetch(self, video_id: str) -> TranscriptList:
         return TranscriptList.build(
             self._http_client,
             video_id,
