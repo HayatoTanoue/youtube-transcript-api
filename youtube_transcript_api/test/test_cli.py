@@ -354,6 +354,20 @@ class TestYouTubeTranscriptCli(TestCase):
         self.assertEqual(proxy_config.http_url, "http://user:pass@domain:port")
         self.assertEqual(proxy_config.https_url, "https://user:pass@domain:port")
 
+    def test_argument_parsing__parallel(self):
+        parsed_args = YouTubeTranscriptCli(
+            "v1 v2 --parallel --max-workers 3".split()
+        )._parse_args()
+
+        self.assertTrue(parsed_args.parallel)
+        self.assertEqual(parsed_args.max_workers, 3)
+
+    def test_run__parallel(self):
+        YouTubeTranscriptCli("v1 v2 --languages de en --parallel".split()).run()
+
+        YouTubeTranscriptApi.list.assert_any_call("v1")
+        YouTubeTranscriptApi.list.assert_any_call("v2")
+
     @pytest.mark.skip(
         reason="This test is temporarily disabled because cookie auth is currently not "
         "working due to YouTube changes."

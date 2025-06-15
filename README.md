@@ -166,9 +166,22 @@ YouTubeTranscriptApi().fetch(video_id, languages=['de'])
 You can also add `preserve_formatting=True` if you'd like to keep HTML formatting elements such as `<i>` (italics) 
 and `<b>` (bold).
 
+
 ```python
-YouTubeTranscriptApi().fetch(video_ids, languages=['de', 'en'], preserve_formatting=True)
+YouTubeTranscriptApi().fetch(video_id, languages=['de', 'en'], preserve_formatting=True)
 ```
+
+### Fetch multiple transcripts in parallel
+
+```python
+ytt_api = YouTubeTranscriptApi()
+results = ytt_api.fetch_parallel([
+    'id1',
+    'id2',
+], languages=['en'], max_workers=5)
+```
+Each entry in ``results`` contains either the ``FetchedTranscript`` or the
+``Exception`` raised for the corresponding video ID.
 
 ### List available transcripts
 
