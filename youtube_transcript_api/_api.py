@@ -1,5 +1,6 @@
 import warnings
-from typing import Optional, Iterable
+from typing import Optional, Iterable, List, Dict, Union, Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from requests import Session
 
@@ -64,6 +65,47 @@ class YouTubeTranscriptApi:
             .find_transcript(languages)
             .fetch(preserve_formatting=preserve_formatting)
         )
+
+    def fetch_parallel(
+        self,
+        video_ids: List[str],
+        languages: Iterable[str] = ("en",),
+        *,
+        max_workers: int = 5,
+        progress_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> Dict[str, Union[FetchedTranscript, Exception]]:
+        """Fetch transcripts for multiple videos in parallel.
+
+        :param video_ids: List of video IDs to process.
+        :param languages: The language priority list used for fetching each
+            transcript. Defaults to ["en"].
+        :param max_workers: The maximum number of worker threads.
+        :param progress_callback: Optional callable that will be invoked with
+            the ``video_id`` and either ``"success"`` or ``"error"`` once a
+            transcript has been processed.
+        :returns: Dictionary mapping video IDs to either the fetched transcript
+            or the raised exception.
+        """
+
+        def _worker(v_id: str) -> FetchedTranscript:
+            api = self.__class__(proxy_config=self._fetcher._proxy_config)
+            return api.fetch(v_id, languages)
+
+        results: Dict[str, Union[FetchedTranscript, Exception]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_worker, vid): vid for vid in video_ids}
+            for future in as_completed(futures):
+                vid = futures[future]
+                try:
+                    results[vid] = future.result()
+                    if progress_callback:
+                        progress_callback(vid, "success")
+                except Exception as exc:  # noqa: BLE001 - propagate as value
+                    results[vid] = exc
+                    if progress_callback:
+                        progress_callback(vid, "error")
+
+        return results
 
     def list(
         self,
