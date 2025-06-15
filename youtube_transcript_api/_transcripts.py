@@ -3,7 +3,7 @@ from enum import Enum
 from itertools import chain
 
 from html import unescape
-from typing import List, Dict, Iterator, Iterable, Pattern, Optional
+from typing import List, Dict, Iterator, Iterable, Pattern, Optional, Tuple
 
 from defusedxml import ElementTree
 
@@ -70,6 +70,88 @@ class FetchedTranscript:
 
     def to_raw_data(self) -> List[Dict]:
         return [asdict(snippet) for snippet in self]
+
+    def search_in_transcript(
+        self,
+        query: str,
+        *,
+        regex: bool = False,
+        case_sensitive: bool = False,
+    ) -> List["SearchResult"]:
+        """Search through the transcript for ``query``.
+
+        :param query: The keyword or regular expression to search for.
+        :param regex: Interpret ``query`` as a regular expression if ``True``.
+        :param case_sensitive: Perform case sensitive matching if ``True``.
+        :return: A list of :class:`SearchResult` objects describing all matches.
+        :raises ValueError: If ``query`` is an invalid regular expression.
+        """
+
+        flags = 0 if case_sensitive else re.IGNORECASE
+        if regex:
+            try:
+                pattern = re.compile(query, flags)
+            except re.error as exc:
+                raise ValueError(f"Invalid regex pattern: {exc}") from exc
+        else:
+            pattern = re.compile(re.escape(query), flags)
+
+        full_text = ""
+        ranges: List[Tuple[int, int, FetchedTranscriptSnippet]] = []
+        for snippet in self.snippets:
+            start = len(full_text)
+            full_text += snippet.text + "\n"
+            end = len(full_text)
+            ranges.append((start, end, snippet))
+
+        word_iter = list(re.finditer(r"\S+", full_text))
+        words = [m.group(0) for m in word_iter]
+        word_positions = [m.start() for m in word_iter]
+
+        results: List[SearchResult] = []
+        for match in pattern.finditer(full_text):
+            char_index = match.start()
+            snippet = next(sn for start, end, sn in ranges if start <= char_index < end)
+            start_time = snippet.start
+            end_time = snippet.start + snippet.duration
+
+            word_index = next(
+                (i for i, pos in enumerate(word_positions) if pos >= char_index),
+                len(words),
+            )
+            match_words = re.findall(r"\S+", match.group(0))
+            before_words = words[max(0, word_index - 10) : word_index]
+            after_words = words[
+                word_index + len(match_words) : word_index + len(match_words) + 10
+            ]
+
+            results.append(
+                SearchResult(
+                    matched_text=match.group(0),
+                    start=start_time,
+                    end=end_time,
+                    context_before=" ".join(before_words),
+                    context_after=" ".join(after_words),
+                )
+            )
+
+        return results
+
+
+@dataclass
+class SearchResult:
+    """Represents a search result returned by :func:`FetchedTranscript.search_in_transcript`."""
+
+    matched_text: str
+    """The text that matched the search query."""
+    start: float
+    """The start time of the snippet containing the match."""
+    end: float
+    """The end time of the snippet containing the match."""
+    context_before: str
+    """Up to ten words that appear before the match."""
+    context_after: str
+    """Up to ten words that appear after the match."""
 
 
 @dataclass

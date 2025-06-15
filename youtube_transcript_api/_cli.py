@@ -61,6 +61,23 @@ class YouTubeTranscriptCli:
                 print_sections.extend(
                     str(transcript_list) for transcript_list in transcripts
                 )
+            elif parsed_args.search:
+                results = []
+                for transcript in transcripts:
+                    results.extend(
+                        transcript.search_in_transcript(
+                            parsed_args.search,
+                            regex=parsed_args.regex,
+                            case_sensitive=parsed_args.case_sensitive,
+                        )
+                    )
+                if results:
+                    print_sections.extend(
+                        f"{result.start:.2f}-{result.end:.2f}s: {result.context_before} [{result.matched_text}] {result.context_after}"
+                        for result in results
+                    )
+                else:
+                    print_sections.append("No matches found.")
             else:
                 print_sections.append(
                     FormatterLoader()
@@ -142,6 +159,25 @@ class YouTubeTranscriptCli:
             type=str,
             default="pretty",
             choices=tuple(FormatterLoader.TYPES.keys()),
+        )
+        parser.add_argument(
+            "--search",
+            default=None,
+            help="Keyword to search for within the fetched transcripts.",
+        )
+        parser.add_argument(
+            "--regex",
+            action="store_const",
+            const=True,
+            default=False,
+            help="Interpret the search keyword as a regular expression.",
+        )
+        parser.add_argument(
+            "--case-sensitive",
+            action="store_const",
+            const=True,
+            default=False,
+            help="Perform a case sensitive search.",
         )
         parser.add_argument(
             "--translate",
