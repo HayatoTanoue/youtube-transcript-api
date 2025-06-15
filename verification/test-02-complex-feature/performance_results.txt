@@ -1,0 +1,3 @@
+Sequential: 3.44s
+Parallel: 0.81s
+Speedup: 4.26x

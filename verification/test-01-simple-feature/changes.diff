@@ -1,0 +1,167 @@
+diff --git a/youtube_transcript_api/formatters.py b/youtube_transcript_api/formatters.py
+index 1b779aa..8827945 100644
+--- a/youtube_transcript_api/formatters.py
++++ b/youtube_transcript_api/formatters.py
+@@ -1,4 +1,6 @@
+ import json
++import csv
++import io
+ 
+ import pprint
+ from typing import List, Iterable
+@@ -87,6 +89,29 @@ class TextFormatter(Formatter):
+         )
+ 
+ 
++class CSVFormatter(Formatter):
++    def format_transcript(self, transcript: FetchedTranscript, **kwargs) -> str:
++        """Converts a transcript into CSV format including a header."""
++        output = io.StringIO()
++        writer = csv.writer(output, **kwargs)
++        writer.writerow(["start_time", "end_time", "duration", "text"])
++        for snippet in transcript:
++            writer.writerow(
++                [
++                    snippet.start,
++                    snippet.start + snippet.duration,
++                    snippet.duration,
++                    snippet.text,
++                ]
++            )
++        return output.getvalue().strip("\n")
++
++    def format_transcripts(self, transcripts: List[FetchedTranscript], **kwargs) -> str:
++        return "\n\n\n".join(
++            [self.format_transcript(transcript, **kwargs) for transcript in transcripts]
++        )
++
++
+ class _TextBasedFormatter(TextFormatter):
+     def _format_timestamp(self, hours: int, mins: int, secs: int, ms: int) -> str:
+         raise NotImplementedError(
+@@ -184,6 +209,7 @@ class FormatterLoader:
+         "text": TextFormatter,
+         "webvtt": WebVTTFormatter,
+         "srt": SRTFormatter,
++        "csv": CSVFormatter,
+     }
+ 
+     class UnknownFormatterType(Exception):
+diff --git a/youtube_transcript_api/test/test_cli.py b/youtube_transcript_api/test/test_cli.py
+index 3edccf9..7728fff 100644
+--- a/youtube_transcript_api/test/test_cli.py
++++ b/youtube_transcript_api/test/test_cli.py
+@@ -2,6 +2,8 @@ import pytest
+ from unittest import TestCase
+ from unittest.mock import MagicMock
+ 
++import csv
++
+ import json
+ 
+ from youtube_transcript_api import (
+@@ -152,6 +154,17 @@ class TestYouTubeTranscriptCli(TestCase):
+         self.assertEqual(parsed_args.format, "json")
+         self.assertEqual(parsed_args.languages, ["en"])
+ 
++    def test_argument_parsing__csv(self):
++        parsed_args = YouTubeTranscriptCli("v1 v2 --format csv".split())._parse_args()
++        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
++        self.assertEqual(parsed_args.format, "csv")
++        self.assertEqual(parsed_args.languages, ["en"])
++
++        parsed_args = YouTubeTranscriptCli("--format csv v1 v2".split())._parse_args()
++        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
++        self.assertEqual(parsed_args.format, "csv")
++        self.assertEqual(parsed_args.languages, ["en"])
++
+     def test_argument_parsing__languages(self):
+         parsed_args = YouTubeTranscriptCli(
+             "v1 v2 --languages de en".split()
+@@ -293,6 +306,20 @@ class TestYouTubeTranscriptCli(TestCase):
+         # will fail if output is not valid json
+         json.loads(output)
+ 
++    def test_run__csv_output(self):
++        output = YouTubeTranscriptCli(
++            "v1 v2 --languages de en --format csv".split()
++        ).run()
++
++        rows = list(
++            csv.reader(
++                output.splitlines()[
++                    -(len(self.transcript_mock.fetch.return_value) + 1) :
++                ]
++            )
++        )
++        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
++
+     def test_run__webshare_proxy_config(self):
+         YouTubeTranscriptCli(
+             (
+@@ -333,7 +360,7 @@ class TestYouTubeTranscriptCli(TestCase):
+     )
+     def test_run__cookies(self):
+         YouTubeTranscriptCli(
+-            ("v1 v2 --languages de en " "--cookies blahblah.txt").split()
++            ("v1 v2 --languages de en --cookies blahblah.txt").split()
+         ).run()
+ 
+         YouTubeTranscriptApi.__init__.assert_any_call(
+diff --git a/youtube_transcript_api/test/test_formatters.py b/youtube_transcript_api/test/test_formatters.py
+index 2832918..b7a2b54 100644
+--- a/youtube_transcript_api/test/test_formatters.py
++++ b/youtube_transcript_api/test/test_formatters.py
+@@ -1,5 +1,6 @@
+ from unittest import TestCase
+ 
++import csv
+ import json
+ 
+ import pprint
+@@ -9,6 +10,7 @@ from youtube_transcript_api.formatters import (
+     FetchedTranscriptSnippet,
+     Formatter,
+     JSONFormatter,
++    CSVFormatter,
+     TextFormatter,
+     SRTFormatter,
+     WebVTTFormatter,
+@@ -142,12 +144,37 @@ class TestFormatters(TestCase):
+             formatted_single_transcript + "\n\n\n" + formatted_single_transcript,
+         )
+ 
++    def test_csv_formatter(self):
++        content = CSVFormatter().format_transcript(self.transcript)
++        rows = list(csv.reader(content.splitlines()))
++        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
++        first = rows[1]
++        self.assertAlmostEqual(float(first[0]), self.transcript_raw[0]["start"])
++        self.assertAlmostEqual(
++            float(first[1]),
++            self.transcript_raw[0]["start"] + self.transcript_raw[0]["duration"],
++        )
++        self.assertAlmostEqual(float(first[2]), self.transcript_raw[0]["duration"])
++        self.assertEqual(first[3], self.transcript_raw[0]["text"])
++
++    def test_csv_formatter_many(self):
++        formatter = CSVFormatter()
++        content = formatter.format_transcripts(self.transcripts)
++        formatted_single = formatter.format_transcript(self.transcript)
++        self.assertEqual(content, formatted_single + "\n\n\n" + formatted_single)
++
+     def test_formatter_loader(self):
+         loader = FormatterLoader()
+         formatter = loader.load("json")
+ 
+         self.assertTrue(isinstance(formatter, JSONFormatter))
+ 
++    def test_formatter_loader__csv(self):
++        loader = FormatterLoader()
++        formatter = loader.load("csv")
++
++        self.assertTrue(isinstance(formatter, CSVFormatter))
++
+     def test_formatter_loader__default_formatter(self):
+         loader = FormatterLoader()
+         formatter = loader.load()

@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.3.5, pluggy-1.5.0
+rootdir: /app
+configfile: pyproject.toml
+plugins: cov-6.2.1
+collected 111 items
+
+youtube_transcript_api/test/test_api.py ................s............... [ 28%]
+....s.......s.........sss......                                          [ 56%]
+youtube_transcript_api/test/test_cli.py ............s..........          [ 77%]
+youtube_transcript_api/test/test_formatters.py ....................      [ 95%]
+youtube_transcript_api/test/test_proxies.py .....                        [100%]
+
+=============================== warnings summary ===============================
+youtube_transcript_api/test/test_api.py: 16 warnings
+  /app/youtube_transcript_api/_api.py:273: DeprecationWarning: `get_transcript` is deprecated and will be removed in a future version. Use the `fetch` method instead!
+    warnings.warn(
+
+youtube_transcript_api/test/test_api.py: 22 warnings
+  /app/youtube_transcript_api/_api.py:170: DeprecationWarning: `list_transcripts` is deprecated and will be removed in a future version. Use the `list` method instead!
+    warnings.warn(
+
+youtube_transcript_api/test/test_api.py::TestYouTubeTranscriptApi::test_get_transcripts__assertionerror_if_input_not_list__deprecated
+youtube_transcript_api/test/test_api.py::TestYouTubeTranscriptApi::test_get_transcripts__continue_on_error__deprecated
+youtube_transcript_api/test/test_api.py::TestYouTubeTranscriptApi::test_get_transcripts__deprecated
+youtube_transcript_api/test/test_api.py::TestYouTubeTranscriptApi::test_get_transcripts__stop_on_error__deprecated
+youtube_transcript_api/test/test_api.py::TestYouTubeTranscriptApi::test_get_transcripts__with_proxies__deprecated
+  /app/youtube_transcript_api/_api.py:221: DeprecationWarning: `get_transcripts` is deprecated and will be removed in a future version. Use the `fetch` method instead!
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Name                                     Stmts   Miss  Cover   Missing
+----------------------------------------------------------------------
+youtube_transcript_api/__init__.py           3      0   100%
+youtube_transcript_api/_api.py              47      0   100%
+youtube_transcript_api/_cli.py              60      0   100%
+youtube_transcript_api/_errors.py           99      0   100%
+youtube_transcript_api/_settings.py          3      0   100%
+youtube_transcript_api/_transcripts.py     191      0   100%
+youtube_transcript_api/formatters.py        75      0   100%
+youtube_transcript_api/proxies.py           46      0   100%
+----------------------------------------------------------------------
+TOTAL                                      524      0   100%
+Coverage HTML written to dir verification/test-01-simple-feature/htmlcov
+Coverage XML written to file verification/test-01-simple-feature/coverage.xml
+================= 104 passed, 7 skipped, 43 warnings in 0.80s ==================

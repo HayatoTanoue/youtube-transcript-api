@@ -1,0 +1,412 @@
+diff --git a/README.md b/README.md
+index 4194279..90622cb 100644
+--- a/README.md
++++ b/README.md
+@@ -166,9 +166,22 @@ YouTubeTranscriptApi().fetch(video_id, languages=['de'])
+ You can also add `preserve_formatting=True` if you'd like to keep HTML formatting elements such as `<i>` (italics) 
+ and `<b>` (bold).
+ 
+-```python
+-YouTubeTranscriptApi().fetch(video_ids, languages=['de', 'en'], preserve_formatting=True)
+-```
++
++```python
++YouTubeTranscriptApi().fetch(video_id, languages=['de', 'en'], preserve_formatting=True)
++```
++
++### Fetch multiple transcripts in parallel
++
++```python
++ytt_api = YouTubeTranscriptApi()
++results = ytt_api.fetch_parallel([
++    'id1',
++    'id2',
++], languages=['en'], max_workers=5)
++```
++Each entry in ``results`` contains either the ``FetchedTranscript`` or the
++``Exception`` raised for the corresponding video ID.
+ 
+ ### List available transcripts
+ 
+diff --git a/youtube_transcript_api/_api.py b/youtube_transcript_api/_api.py
+index 4f7851c..28aa8cb 100644
+--- a/youtube_transcript_api/_api.py
++++ b/youtube_transcript_api/_api.py
+@@ -1,5 +1,6 @@
+ import warnings
+-from typing import Optional, Iterable
++from typing import Optional, Iterable, List, Dict, Union, Callable
++from concurrent.futures import ThreadPoolExecutor, as_completed
+ 
+ from requests import Session
+ 
+@@ -65,6 +66,47 @@ class YouTubeTranscriptApi:
+             .fetch(preserve_formatting=preserve_formatting)
+         )
+ 
++    def fetch_parallel(
++        self,
++        video_ids: List[str],
++        languages: Iterable[str] = ("en",),
++        *,
++        max_workers: int = 5,
++        progress_callback: Optional[Callable[[str, str], None]] = None,
++    ) -> Dict[str, Union[FetchedTranscript, Exception]]:
++        """Fetch transcripts for multiple videos in parallel.
++
++        :param video_ids: List of video IDs to process.
++        :param languages: The language priority list used for fetching each
++            transcript. Defaults to ["en"].
++        :param max_workers: The maximum number of worker threads.
++        :param progress_callback: Optional callable that will be invoked with
++            the ``video_id`` and either ``"success"`` or ``"error"`` once a
++            transcript has been processed.
++        :returns: Dictionary mapping video IDs to either the fetched transcript
++            or the raised exception.
++        """
++
++        def _worker(v_id: str) -> FetchedTranscript:
++            api = self.__class__(proxy_config=self._fetcher._proxy_config)
++            return api.fetch(v_id, languages)
++
++        results: Dict[str, Union[FetchedTranscript, Exception]] = {}
++        with ThreadPoolExecutor(max_workers=max_workers) as executor:
++            futures = {executor.submit(_worker, vid): vid for vid in video_ids}
++            for future in as_completed(futures):
++                vid = futures[future]
++                try:
++                    results[vid] = future.result()
++                    if progress_callback:
++                        progress_callback(vid, "success")
++                except Exception as exc:  # noqa: BLE001 - propagate as value
++                    results[vid] = exc
++                    if progress_callback:
++                        progress_callback(vid, "error")
++
++        return results
++
+     def list(
+         self,
+         video_id: str,
+diff --git a/youtube_transcript_api/_cli.py b/youtube_transcript_api/_cli.py
+index 3f28766..eef23e3 100644
+--- a/youtube_transcript_api/_cli.py
++++ b/youtube_transcript_api/_cli.py
+@@ -1,5 +1,6 @@
+ import argparse
+ from typing import List
++from concurrent.futures import ThreadPoolExecutor, as_completed
+ 
+ from .proxies import GenericProxyConfig, WebshareProxyConfig
+ from .formatters import FormatterLoader
+@@ -36,24 +37,46 @@ class YouTubeTranscriptCli:
+         transcripts = []
+         exceptions = []
+ 
+-        ytt_api = YouTubeTranscriptApi(
+-            proxy_config=proxy_config,
+-        )
+-
+-        for video_id in parsed_args.video_ids:
++        def _process(video_id: str):
++            api = YouTubeTranscriptApi(proxy_config=proxy_config)
+             try:
+-                transcript_list = ytt_api.list(video_id)
++                transcript_list = api.list(video_id)
+                 if parsed_args.list_transcripts:
+-                    transcripts.append(transcript_list)
+-                else:
+-                    transcripts.append(
+-                        self._fetch_transcript(
+-                            parsed_args,
+-                            transcript_list,
++                    return transcript_list
++                return self._fetch_transcript(parsed_args, transcript_list)
++            except Exception as exc:  # noqa: BLE001 - return error
++                return exc
++
++        if parsed_args.parallel and len(parsed_args.video_ids) > 1:
++            with ThreadPoolExecutor(max_workers=parsed_args.max_workers) as executor:
++                futures = {
++                    executor.submit(_process, vid): vid for vid in parsed_args.video_ids
++                }
++                for future in as_completed(futures):
++                    result = future.result()
++                    if isinstance(result, Exception):
++                        exceptions.append(result)
++                    else:
++                        transcripts.append(result)
++        else:
++            ytt_api = YouTubeTranscriptApi(
++                proxy_config=proxy_config,
++            )
++
++            for video_id in parsed_args.video_ids:
++                try:
++                    transcript_list = ytt_api.list(video_id)
++                    if parsed_args.list_transcripts:
++                        transcripts.append(transcript_list)
++                    else:
++                        transcripts.append(
++                            self._fetch_transcript(
++                                parsed_args,
++                                transcript_list,
++                            )
+                         )
+-                    )
+-            except Exception as exception:
+-                exceptions.append(exception)
++                except Exception as exception:
++                    exceptions.append(exception)
+ 
+         print_sections = [str(exception) for exception in exceptions]
+         if transcripts:
+@@ -176,6 +199,20 @@ class YouTubeTranscriptCli:
+             metavar="URL",
+             help="Use the specified HTTPS proxy.",
+         )
++        parser.add_argument(
++            "--parallel",
++            action="store_const",
++            const=True,
++            default=False,
++            help="Enable parallel fetching for multiple video IDs.",
++        )
++        parser.add_argument(
++            "--max-workers",
++            type=int,
++            default=5,
++            metavar="N",
++            help="Maximum number of worker threads for parallel fetching.",
++        )
+         # Cookie auth has been temporarily disabled, as it is not working properly with
+         # YouTube's most recent changes.
+         # parser.add_argument(
+diff --git a/youtube_transcript_api/formatters.py b/youtube_transcript_api/formatters.py
+index 1b779aa..8827945 100644
+--- a/youtube_transcript_api/formatters.py
++++ b/youtube_transcript_api/formatters.py
+@@ -1,4 +1,6 @@
+ import json
++import csv
++import io
+ 
+ import pprint
+ from typing import List, Iterable
+@@ -87,6 +89,29 @@ class TextFormatter(Formatter):
+         )
+ 
+ 
++class CSVFormatter(Formatter):
++    def format_transcript(self, transcript: FetchedTranscript, **kwargs) -> str:
++        """Converts a transcript into CSV format including a header."""
++        output = io.StringIO()
++        writer = csv.writer(output, **kwargs)
++        writer.writerow(["start_time", "end_time", "duration", "text"])
++        for snippet in transcript:
++            writer.writerow(
++                [
++                    snippet.start,
++                    snippet.start + snippet.duration,
++                    snippet.duration,
++                    snippet.text,
++                ]
++            )
++        return output.getvalue().strip("\n")
++
++    def format_transcripts(self, transcripts: List[FetchedTranscript], **kwargs) -> str:
++        return "\n\n\n".join(
++            [self.format_transcript(transcript, **kwargs) for transcript in transcripts]
++        )
++
++
+ class _TextBasedFormatter(TextFormatter):
+     def _format_timestamp(self, hours: int, mins: int, secs: int, ms: int) -> str:
+         raise NotImplementedError(
+@@ -184,6 +209,7 @@ class FormatterLoader:
+         "text": TextFormatter,
+         "webvtt": WebVTTFormatter,
+         "srt": SRTFormatter,
++        "csv": CSVFormatter,
+     }
+ 
+     class UnknownFormatterType(Exception):
+diff --git a/youtube_transcript_api/test/test_api.py b/youtube_transcript_api/test/test_api.py
+index 7cc9962..434361c 100644
+--- a/youtube_transcript_api/test/test_api.py
++++ b/youtube_transcript_api/test/test_api.py
+@@ -845,3 +845,36 @@ class TestYouTubeTranscriptApi(TestCase):
+         }
+         YouTubeTranscriptApi.get_transcripts(["GJLlxj_dtq8"], proxies=proxies)
+         mock_get_transcript.assert_any_call("GJLlxj_dtq8", ("en",), proxies, False)
++
++    def test_fetch_parallel(self):
++        api = YouTubeTranscriptApi()
++        results = api.fetch_parallel(["GJLlxj_dtq8", "F1xioXWb8CY"], ["en"])
++        self.assertIsInstance(results["GJLlxj_dtq8"], FetchedTranscript)
++        self.assertIsInstance(results["F1xioXWb8CY"], FetchedTranscript)
++
++    def test_fetch_parallel__error(self):
++        def side_effect(video_id, languages=("en",), preserve_formatting=False):
++            if video_id == "bad":
++                raise Exception("boom")
++            return self.ref_transcript
++
++        with patch(
++            "youtube_transcript_api._api.YouTubeTranscriptApi.fetch",
++            side_effect=side_effect,
++        ):
++            api = YouTubeTranscriptApi()
++            results = api.fetch_parallel(["bad", "good"], ["en"])
++            self.assertIsInstance(results["bad"], Exception)
++            self.assertIsInstance(results["good"], FetchedTranscript)
++
++    def test_fetch_parallel__progress_callback(self):
++        progress = []
++        api = YouTubeTranscriptApi()
++        api.fetch_parallel(
++            [
++                "GJLlxj_dtq8",
++                "F1xioXWb8CY",
++            ],
++            progress_callback=lambda v, s: progress.append((v, s)),
++        )
++        self.assertEqual(len(progress), 2)
+diff --git a/youtube_transcript_api/test/test_cli.py b/youtube_transcript_api/test/test_cli.py
+index 3edccf9..18b28b9 100644
+--- a/youtube_transcript_api/test/test_cli.py
++++ b/youtube_transcript_api/test/test_cli.py
+@@ -2,6 +2,8 @@ import pytest
+ from unittest import TestCase
+ from unittest.mock import MagicMock
+ 
++import csv
++
+ import json
+ 
+ from youtube_transcript_api import (
+@@ -152,6 +154,17 @@ class TestYouTubeTranscriptCli(TestCase):
+         self.assertEqual(parsed_args.format, "json")
+         self.assertEqual(parsed_args.languages, ["en"])
+ 
++    def test_argument_parsing__csv(self):
++        parsed_args = YouTubeTranscriptCli("v1 v2 --format csv".split())._parse_args()
++        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
++        self.assertEqual(parsed_args.format, "csv")
++        self.assertEqual(parsed_args.languages, ["en"])
++
++        parsed_args = YouTubeTranscriptCli("--format csv v1 v2".split())._parse_args()
++        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
++        self.assertEqual(parsed_args.format, "csv")
++        self.assertEqual(parsed_args.languages, ["en"])
++
+     def test_argument_parsing__languages(self):
+         parsed_args = YouTubeTranscriptCli(
+             "v1 v2 --languages de en".split()
+@@ -293,6 +306,20 @@ class TestYouTubeTranscriptCli(TestCase):
+         # will fail if output is not valid json
+         json.loads(output)
+ 
++    def test_run__csv_output(self):
++        output = YouTubeTranscriptCli(
++            "v1 v2 --languages de en --format csv".split()
++        ).run()
++
++        rows = list(
++            csv.reader(
++                output.splitlines()[
++                    -(len(self.transcript_mock.fetch.return_value) + 1) :
++                ]
++            )
++        )
++        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
++
+     def test_run__webshare_proxy_config(self):
+         YouTubeTranscriptCli(
+             (
+@@ -327,13 +354,27 @@ class TestYouTubeTranscriptCli(TestCase):
+         self.assertEqual(proxy_config.http_url, "http://user:pass@domain:port")
+         self.assertEqual(proxy_config.https_url, "https://user:pass@domain:port")
+ 
++    def test_argument_parsing__parallel(self):
++        parsed_args = YouTubeTranscriptCli(
++            "v1 v2 --parallel --max-workers 3".split()
++        )._parse_args()
++
++        self.assertTrue(parsed_args.parallel)
++        self.assertEqual(parsed_args.max_workers, 3)
++
++    def test_run__parallel(self):
++        YouTubeTranscriptCli("v1 v2 --languages de en --parallel".split()).run()
++
++        YouTubeTranscriptApi.list.assert_any_call("v1")
++        YouTubeTranscriptApi.list.assert_any_call("v2")
++
+     @pytest.mark.skip(
+         reason="This test is temporarily disabled because cookie auth is currently not "
+         "working due to YouTube changes."
+     )
+     def test_run__cookies(self):
+         YouTubeTranscriptCli(
+-            ("v1 v2 --languages de en " "--cookies blahblah.txt").split()
++            ("v1 v2 --languages de en --cookies blahblah.txt").split()
+         ).run()
+ 
+         YouTubeTranscriptApi.__init__.assert_any_call(
+diff --git a/youtube_transcript_api/test/test_formatters.py b/youtube_transcript_api/test/test_formatters.py
+index 2832918..b7a2b54 100644
+--- a/youtube_transcript_api/test/test_formatters.py
++++ b/youtube_transcript_api/test/test_formatters.py
+@@ -1,5 +1,6 @@
+ from unittest import TestCase
+ 
++import csv
+ import json
+ 
+ import pprint
+@@ -9,6 +10,7 @@ from youtube_transcript_api.formatters import (
+     FetchedTranscriptSnippet,
+     Formatter,
+     JSONFormatter,
++    CSVFormatter,
+     TextFormatter,
+     SRTFormatter,
+     WebVTTFormatter,
+@@ -142,12 +144,37 @@ class TestFormatters(TestCase):
+             formatted_single_transcript + "\n\n\n" + formatted_single_transcript,
+         )
+ 
++    def test_csv_formatter(self):
++        content = CSVFormatter().format_transcript(self.transcript)
++        rows = list(csv.reader(content.splitlines()))
++        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
++        first = rows[1]
++        self.assertAlmostEqual(float(first[0]), self.transcript_raw[0]["start"])
++        self.assertAlmostEqual(
++            float(first[1]),
++            self.transcript_raw[0]["start"] + self.transcript_raw[0]["duration"],
++        )
++        self.assertAlmostEqual(float(first[2]), self.transcript_raw[0]["duration"])
++        self.assertEqual(first[3], self.transcript_raw[0]["text"])
++
++    def test_csv_formatter_many(self):
++        formatter = CSVFormatter()
++        content = formatter.format_transcripts(self.transcripts)
++        formatted_single = formatter.format_transcript(self.transcript)
++        self.assertEqual(content, formatted_single + "\n\n\n" + formatted_single)
++
+     def test_formatter_loader(self):
+         loader = FormatterLoader()
+         formatter = loader.load("json")
+ 
+         self.assertTrue(isinstance(formatter, JSONFormatter))
+ 
++    def test_formatter_loader__csv(self):
++        loader = FormatterLoader()
++        formatter = loader.load("csv")
++
++        self.assertTrue(isinstance(formatter, CSVFormatter))
++
+     def test_formatter_loader__default_formatter(self):
+         loader = FormatterLoader()
+         formatter = loader.load()

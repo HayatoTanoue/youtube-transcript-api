@@ -1,0 +1,7 @@
+=== Test Summary ===
+Date: Sun Jun 15 19:43:59 UTC 2025
+Git commit: b716e24c2e20b15a1059e9b00b6beb20f4eb33c2
+
+PyTest results:
+youtube_transcript_api/_errors.py           99      0   100%
+================== 99 passed, 7 skipped, 43 warnings in 0.77s ==================

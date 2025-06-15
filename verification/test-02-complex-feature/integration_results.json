@@ -1,0 +1,36 @@
+{
+  "execution_time": 0.8410341739654541,
+  "video_count": 3,
+  "total_snippets": 141,
+  "progress_log": [
+    {
+      "time": 1750019754.3471835,
+      "video_id": "jNQXAC9IVRw",
+      "status": "success"
+    },
+    {
+      "time": 1750019754.4701138,
+      "video_id": "GJLlxj_dtq8",
+      "status": "success"
+    },
+    {
+      "time": 1750019754.5265925,
+      "video_id": "dQw4w9WgXcQ",
+      "status": "success"
+    }
+  ],
+  "results": {
+    "jNQXAC9IVRw": {
+      "success": true,
+      "snippet_count": 6
+    },
+    "GJLlxj_dtq8": {
+      "success": true,
+      "snippet_count": 74
+    },
+    "dQw4w9WgXcQ": {
+      "success": true,
+      "snippet_count": 61
+    }
+  }
+}
