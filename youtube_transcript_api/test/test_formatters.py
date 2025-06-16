@@ -4,6 +4,7 @@ import json
 
 import pprint
 
+import csv
 from youtube_transcript_api.formatters import (
     FetchedTranscript,
     FetchedTranscriptSnippet,
@@ -14,6 +15,7 @@ from youtube_transcript_api.formatters import (
     WebVTTFormatter,
     PrettyPrintFormatter,
     FormatterLoader,
+    CSVFormatter,
 )
 
 
@@ -157,3 +159,27 @@ class TestFormatters(TestCase):
     def test_formatter_loader__unknown_format(self):
         with self.assertRaises(FormatterLoader.UnknownFormatterType):
             FormatterLoader().load("png")
+
+    def test_csv_formatter(self):
+        content = CSVFormatter().format_transcript(self.transcript)
+        rows = list(csv.reader(content.splitlines()))
+        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
+        first = rows[1]
+        self.assertAlmostEqual(float(first[0]), self.transcript_raw[0]["start"])
+        self.assertAlmostEqual(
+            float(first[1]),
+            self.transcript_raw[0]["start"] + self.transcript_raw[0]["duration"],
+        )
+        self.assertAlmostEqual(float(first[2]), self.transcript_raw[0]["duration"])
+        self.assertEqual(first[3], self.transcript_raw[0]["text"])
+
+    def test_csv_formatter_many(self):
+        formatter = CSVFormatter()
+        content = formatter.format_transcripts(self.transcripts)
+        formatted_single = formatter.format_transcript(self.transcript)
+        self.assertEqual(content, formatted_single + "\n\n\n" + formatted_single)
+
+    def test_formatter_loader__csv(self):
+        loader = FormatterLoader()
+        formatter = loader.load("csv")
+        self.assertTrue(isinstance(formatter, CSVFormatter))
