@@ -2,6 +2,7 @@ import warnings
 from typing import Optional, Iterable
 
 from requests import Session
+import requests
 
 from .proxies import ProxyConfig, GenericProxyConfig
 
@@ -13,6 +14,7 @@ class YouTubeTranscriptApi:
         self,
         proxy_config: Optional[ProxyConfig] = None,
         http_client: Optional[Session] = None,
+        cache_size: int = 20,
     ):
         """
         Note on thread-safety: As this class will initialize a `requests.Session`
@@ -27,9 +29,15 @@ class YouTubeTranscriptApi:
         :param http_client: You can optionally pass in a requests.Session object, if you
             manually want to share cookies between different instances of
             `YouTubeTranscriptApi`, overwrite defaults, specify SSL certificates, etc.
+        :param cache_size: maximum number of transcript lists to cache in memory
         """
         http_client = Session() if http_client is None else http_client
         http_client.headers.update({"Accept-Language": "en-US"})
+        http_client.headers.setdefault("Accept-Encoding", "gzip, deflate")
+        http_client.trust_env = False
+        adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        http_client.mount("https://", adapter)
+        http_client.mount("http://", adapter)
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.
         # if cookie_path is not None:
@@ -38,7 +46,11 @@ class YouTubeTranscriptApi:
             http_client.proxies = proxy_config.to_requests_dict()
             if proxy_config.prevent_keeping_connections_alive:
                 http_client.headers.update({"Connection": "close"})
-        self._fetcher = TranscriptListFetcher(http_client, proxy_config=proxy_config)
+        self._fetcher = TranscriptListFetcher(
+            http_client,
+            proxy_config=proxy_config,
+            cache_size=cache_size,
+        )
 
     def fetch(
         self,

@@ -11,6 +11,8 @@ import re
 
 from requests import HTTPError, Session, Response
 
+from ._cache import LRUCache
+
 from .proxies import ProxyConfig
 from ._settings import WATCH_URL, INNERTUBE_CONTEXT, INNERTUBE_API_URL
 from ._errors import (
@@ -31,7 +33,7 @@ from ._errors import (
 )
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscriptSnippet:
     text: str
     start: float
@@ -46,7 +48,7 @@ class FetchedTranscriptSnippet:
     """
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscript:
     """
     Represents a fetched transcript. This object is iterable, which allows you to
@@ -72,7 +74,7 @@ class FetchedTranscript:
         return [asdict(snippet) for snippet in self]
 
 
-@dataclass
+@dataclass(slots=True)
 class _TranslationLanguage:
     language: str
     language_code: str
@@ -99,6 +101,17 @@ def _raise_http_errors(response: Response, video_id: str) -> Response:
 
 
 class Transcript:
+    __slots__ = (
+        "_http_client",
+        "video_id",
+        "_url",
+        "language",
+        "language_code",
+        "is_generated",
+        "translation_languages",
+        "_translation_languages_dict",
+    )
+
     def __init__(
         self,
         http_client: Session,
@@ -176,6 +189,12 @@ class Transcript:
 
 
 class TranscriptList:
+    __slots__ = (
+        "video_id",
+        "_manually_created_transcripts",
+        "_generated_transcripts",
+        "_translation_languages",
+    )
     """
     This object represents a list of transcripts. It can be iterated over to list all transcripts which are available
     for a given YouTube video. Also, it provides functionality to search for a transcript in a given language.
@@ -343,16 +362,28 @@ class TranscriptList:
 
 
 class TranscriptListFetcher:
-    def __init__(self, http_client: Session, proxy_config: Optional[ProxyConfig]):
+    def __init__(
+        self,
+        http_client: Session,
+        proxy_config: Optional[ProxyConfig],
+        cache_size: int = 20,
+    ):
         self._http_client = http_client
         self._proxy_config = proxy_config
+        self._cache = LRUCache(cache_size)
 
     def fetch(self, video_id: str) -> TranscriptList:
-        return TranscriptList.build(
+        cached = self._cache.get(video_id)
+        if cached is not None:
+            return cached
+
+        transcript_list = TranscriptList.build(
             self._http_client,
             video_id,
             self._fetch_captions_json(video_id),
         )
+        self._cache.set(video_id, transcript_list)
+        return transcript_list
 
     def _fetch_captions_json(self, video_id: str, try_number: int = 0) -> Dict:
         try:
