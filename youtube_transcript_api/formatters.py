@@ -161,12 +161,12 @@ class SRTFormatter(_TextBasedFormatter):
     def _format_transcript_helper(
         self, i: int, time_text: str, snippet: FetchedTranscriptSnippet
     ) -> str:
-        return "{}\n{}\n{}".format(i, time_text, snippet.text)
+        return "{}\n{}\n{}".format(i + 1, time_text, snippet.text)
 
 
 class WebVTTFormatter(_TextBasedFormatter):
     def _format_timestamp(self, hours: int, mins: int, secs: int, ms: int) -> str:
-        return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, mins, secs, ms)
+        return "{:02d}:{:02d}:{:02d}.{:03d}".format(hours, mins, secs, ms)
 
     def _format_transcript_header(self, lines: Iterable[str]) -> str:
         return "WEBVTT\n\n" + "\n\n".join(lines) + "\n"

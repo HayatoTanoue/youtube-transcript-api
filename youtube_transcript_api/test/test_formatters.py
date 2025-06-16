@@ -86,6 +86,7 @@ class TestFormatters(TestCase):
         # test starting lines
         self.assertEqual(lines[0], "WEBVTT")
         self.assertEqual(lines[1], "")
+        self.assertEqual(lines[2], "00:00:00.000 --> 00:00:01.500")
 
     def test_webvtt_formatter_ending(self):
         content = WebVTTFormatter().format_transcript(self.transcript)
