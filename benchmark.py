@@ -33,15 +33,25 @@ def teardown_mock():
 
 
 def benchmark_single(video_id: str) -> float:
+    api = YouTubeTranscriptApi()
     start = time.perf_counter()
-    YouTubeTranscriptApi().fetch(video_id)
+    api.fetch(video_id)
     return time.perf_counter() - start
 
 
 def benchmark_multiple(video_ids) -> float:
+    api = YouTubeTranscriptApi()
     start = time.perf_counter()
     with ThreadPoolExecutor() as ex:
-        list(ex.map(lambda vid: YouTubeTranscriptApi().fetch(vid), video_ids))
+        list(ex.map(api.fetch, video_ids))
+    return time.perf_counter() - start
+
+
+def benchmark_repeated(video_id: str, count: int = 10) -> float:
+    api = YouTubeTranscriptApi()
+    start = time.perf_counter()
+    for _ in range(count):
+        api.fetch(video_id)
     return time.perf_counter() - start
 
 
@@ -50,10 +60,12 @@ def main():
     vid = "GJLlxj_dtq8"
     single = benchmark_single(vid)
     parallel = benchmark_multiple([vid] * 10)
+    cached = benchmark_repeated(vid)
     teardown_mock()
 
     print(f"Single fetch: {single:.4f}s")
     print(f"Parallel fetch of 10 videos: {parallel:.4f}s")
+    print(f"Repeated fetch of same video (10x): {cached:.4f}s")
 
 
 if __name__ == "__main__":

@@ -5,8 +5,9 @@ Benchmarks were executed using `benchmark.py` with mocked network responses.
 
 | Scenario | Old Time (s) | New Time (s) |
 |---------|--------------|--------------|
-| Single video fetch | n/a | 0.0369 |
-| Parallel fetch of 10 videos | n/a | 0.4394 |
+| Single video fetch | 0.0252 | 0.0132 |
+| Parallel fetch of 10 videos | 0.3446 | 0.1649 |
+| Repeated fetch of same video (10x) | 0.1643 | 0.0246 |
 
 The new implementation introduces connection pooling, gzip compression support,
 and an in-memory LRU cache for transcript lists. Dataclasses now use `slots` to
