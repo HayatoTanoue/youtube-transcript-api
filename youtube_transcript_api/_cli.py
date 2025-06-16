@@ -1,5 +1,6 @@
 import argparse
 from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .proxies import GenericProxyConfig, WebshareProxyConfig
 from .formatters import FormatterLoader
@@ -36,24 +37,32 @@ class YouTubeTranscriptCli:
         transcripts = []
         exceptions = []
 
-        ytt_api = YouTubeTranscriptApi(
-            proxy_config=proxy_config,
-        )
-
-        for video_id in parsed_args.video_ids:
+        def _process(video_id: str):
+            api = YouTubeTranscriptApi(proxy_config=proxy_config)
             try:
-                transcript_list = ytt_api.list(video_id)
+                transcript_list = api.list(video_id)
                 if parsed_args.list_transcripts:
-                    transcripts.append(transcript_list)
-                else:
-                    transcripts.append(
-                        self._fetch_transcript(
-                            parsed_args,
-                            transcript_list,
-                        )
-                    )
+                    return transcript_list
+                return self._fetch_transcript(parsed_args, transcript_list)
             except Exception as exception:
-                exceptions.append(exception)
+                return exception
+
+        if parsed_args.parallel and len(parsed_args.video_ids) > 1:
+            with ThreadPoolExecutor(max_workers=parsed_args.max_workers) as executor:
+                futures = {executor.submit(_process, vid): vid for vid in parsed_args.video_ids}
+                for future in as_completed(futures):
+                    result = future.result()
+                    if isinstance(result, Exception):
+                        exceptions.append(result)
+                    else:
+                        transcripts.append(result)
+        else:
+            for video_id in parsed_args.video_ids:
+                result = _process(video_id)
+                if isinstance(result, Exception):
+                    exceptions.append(result)
+                else:
+                    transcripts.append(result)
 
         print_sections = [str(exception) for exception in exceptions]
         if transcripts:
@@ -175,6 +184,20 @@ class YouTubeTranscriptCli:
             default="",
             metavar="URL",
             help="Use the specified HTTPS proxy.",
+        )
+        parser.add_argument(
+            "--parallel",
+            action="store_const",
+            const=True,
+            default=False,
+            help="Enable parallel fetching for multiple video IDs.",
+        )
+        parser.add_argument(
+            "--max-workers",
+            type=int,
+            default=5,
+            metavar="N",
+            help="Maximum number of worker threads for parallel fetching.",
         )
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.

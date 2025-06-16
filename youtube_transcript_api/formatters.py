@@ -1,4 +1,6 @@
 import json
+import csv
+import io
 
 import pprint
 from typing import List, Iterable
@@ -87,6 +89,29 @@ class TextFormatter(Formatter):
         )
 
 
+class CSVFormatter(Formatter):
+    def format_transcript(self, transcript: FetchedTranscript, **kwargs) -> str:
+        """Converts a transcript into CSV format including a header."""
+        output = io.StringIO()
+        writer = csv.writer(output, **kwargs)
+        writer.writerow(["start_time", "end_time", "duration", "text"])
+        for snippet in transcript:
+            writer.writerow(
+                [
+                    snippet.start,
+                    snippet.start + snippet.duration,
+                    snippet.duration,
+                    snippet.text,
+                ]
+            )
+        return output.getvalue().strip("\n")
+
+    def format_transcripts(self, transcripts: List[FetchedTranscript], **kwargs) -> str:
+        return "\n\n\n".join(
+            [self.format_transcript(transcript, **kwargs) for transcript in transcripts]
+        )
+
+
 class _TextBasedFormatter(TextFormatter):
     def _format_timestamp(self, hours: int, mins: int, secs: int, ms: int) -> str:
         raise NotImplementedError(
@@ -161,12 +186,12 @@ class SRTFormatter(_TextBasedFormatter):
     def _format_transcript_helper(
         self, i: int, time_text: str, snippet: FetchedTranscriptSnippet
     ) -> str:
-        return "{}\n{}\n{}".format(i, time_text, snippet.text)
+        return "{}\n{}\n{}".format(i + 1, time_text, snippet.text)
 
 
 class WebVTTFormatter(_TextBasedFormatter):
     def _format_timestamp(self, hours: int, mins: int, secs: int, ms: int) -> str:
-        return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, mins, secs, ms)
+        return "{:02d}:{:02d}:{:02d}.{:03d}".format(hours, mins, secs, ms)
 
     def _format_transcript_header(self, lines: Iterable[str]) -> str:
         return "WEBVTT\n\n" + "\n\n".join(lines) + "\n"
@@ -184,6 +209,7 @@ class FormatterLoader:
         "text": TextFormatter,
         "webvtt": WebVTTFormatter,
         "srt": SRTFormatter,
+        "csv": CSVFormatter,
     }
 
     class UnknownFormatterType(Exception):

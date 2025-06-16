@@ -845,3 +845,36 @@ class TestYouTubeTranscriptApi(TestCase):
         }
         YouTubeTranscriptApi.get_transcripts(["GJLlxj_dtq8"], proxies=proxies)
         mock_get_transcript.assert_any_call("GJLlxj_dtq8", ("en",), proxies, False)
+
+    def test_fetch_parallel(self):
+        api = YouTubeTranscriptApi()
+        results = api.fetch_parallel(["GJLlxj_dtq8", "F1xioXWb8CY"], ["en"])
+        self.assertIsInstance(results["GJLlxj_dtq8"], FetchedTranscript)
+        self.assertIsInstance(results["F1xioXWb8CY"], FetchedTranscript)
+
+    def test_fetch_parallel__error(self):
+        def side_effect(video_id, languages=("en",), preserve_formatting=False):
+            if video_id == "bad":
+                raise Exception("boom")
+            return self.ref_transcript
+
+        with patch(
+            "youtube_transcript_api._api.YouTubeTranscriptApi.fetch",
+            side_effect=side_effect,
+        ):
+            api = YouTubeTranscriptApi()
+            results = api.fetch_parallel(["bad", "good"], ["en"])
+            self.assertIsInstance(results["bad"], Exception)
+            self.assertIsInstance(results["good"], FetchedTranscript)
+
+    def test_fetch_parallel__progress_callback(self):
+        progress = []
+        api = YouTubeTranscriptApi()
+        api.fetch_parallel(
+            [
+                "GJLlxj_dtq8",
+                "F1xioXWb8CY",
+            ],
+            progress_callback=lambda v, s: progress.append((v, s)),
+        )
+        self.assertEqual(len(progress), 2)

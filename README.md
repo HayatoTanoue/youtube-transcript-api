@@ -124,6 +124,13 @@ last_snippet = fetched_transcript[-1]
 snippet_count = len(fetched_transcript)
 ```
 
+To fetch transcripts for multiple videos concurrently use `fetch_parallel`:
+
+```python
+ytt_api = YouTubeTranscriptApi()
+results = ytt_api.fetch_parallel(["id1", "id2"])
+```
+
 If you prefer to handle the raw transcript data you can call `fetched_transcript.to_raw_data()`, which will return 
 a list of dictionaries:
 
@@ -485,9 +492,21 @@ youtube_transcript_api <first_video_id> <second_video_id> ... --languages de en 
 
 Translating transcripts using the CLI is also possible:
 
-```  
+```
 youtube_transcript_api <first_video_id> <second_video_id> ... --languages en --translate de
-```  
+```
+
+Parallel fetching of multiple videos is also available:
+
+```
+youtube_transcript_api id1 id2 --parallel --max-workers 3
+```
+
+To store the output in CSV format you can run:
+
+```
+youtube_transcript_api <video_id> --format csv > transcript.csv
+```
 
 If you are not sure which languages are available for a given video you can call, to list all available transcripts:
 

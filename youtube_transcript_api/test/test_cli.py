@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock
 
 import json
+import csv
 
 from youtube_transcript_api import (
     YouTubeTranscriptApi,
@@ -160,6 +161,17 @@ class TestYouTubeTranscriptCli(TestCase):
         self.assertEqual(parsed_args.format, "pretty")
         self.assertEqual(parsed_args.languages, ["de", "en"])
 
+    def test_argument_parsing__csv(self):
+        parsed_args = YouTubeTranscriptCli("v1 v2 --format csv".split())._parse_args()
+        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
+        self.assertEqual(parsed_args.format, "csv")
+        self.assertEqual(parsed_args.languages, ["en"])
+
+        parsed_args = YouTubeTranscriptCli("--format csv v1 v2".split())._parse_args()
+        self.assertEqual(parsed_args.video_ids, ["v1", "v2"])
+        self.assertEqual(parsed_args.format, "csv")
+        self.assertEqual(parsed_args.languages, ["en"])
+
     def test_argument_parsing__proxies(self):
         parsed_args = YouTubeTranscriptCli(
             "v1 v2 --http-proxy http://user:pass@domain:port".split()
@@ -233,6 +245,14 @@ class TestYouTubeTranscriptCli(TestCase):
         self.assertTrue(parsed_args.exclude_manually_created)
         self.assertTrue(parsed_args.exclude_generated)
 
+    def test_argument_parsing__parallel(self):
+        parsed_args = YouTubeTranscriptCli(
+            "v1 v2 --parallel --max-workers 3".split()
+        )._parse_args()
+
+        self.assertTrue(parsed_args.parallel)
+        self.assertEqual(parsed_args.max_workers, 3)
+
     def test_run(self):
         YouTubeTranscriptCli("v1 v2 --languages de en".split()).run()
 
@@ -292,6 +312,26 @@ class TestYouTubeTranscriptCli(TestCase):
 
         # will fail if output is not valid json
         json.loads(output)
+
+    def test_run__parallel(self):
+        YouTubeTranscriptCli("v1 v2 --languages de en --parallel".split()).run()
+
+        YouTubeTranscriptApi.list.assert_any_call("v1")
+        YouTubeTranscriptApi.list.assert_any_call("v2")
+
+    def test_run__csv_output(self):
+        output = YouTubeTranscriptCli(
+            "v1 v2 --languages de en --format csv".split()
+        ).run()
+
+        rows = list(
+            csv.reader(
+                output.splitlines()[
+                    -(len(self.transcript_mock.fetch.return_value) + 1) :
+                ]
+            )
+        )
+        self.assertEqual(rows[0], ["start_time", "end_time", "duration", "text"])
 
     def test_run__webshare_proxy_config(self):
         YouTubeTranscriptCli(
