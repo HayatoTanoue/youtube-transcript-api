@@ -13,6 +13,7 @@ class YouTubeTranscriptApi:
         self,
         proxy_config: Optional[ProxyConfig] = None,
         http_client: Optional[Session] = None,
+        enable_cache: bool = False,
     ):
         """
         Note on thread-safety: As this class will initialize a `requests.Session`
@@ -28,7 +29,9 @@ class YouTubeTranscriptApi:
             manually want to share cookies between different instances of
             `YouTubeTranscriptApi`, overwrite defaults, specify SSL certificates, etc.
         """
-        http_client = Session() if http_client is None else http_client
+        if http_client is None:
+            http_client = Session()
+            http_client.trust_env = False
         http_client.headers.update({"Accept-Language": "en-US"})
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.
@@ -38,7 +41,11 @@ class YouTubeTranscriptApi:
             http_client.proxies = proxy_config.to_requests_dict()
             if proxy_config.prevent_keeping_connections_alive:
                 http_client.headers.update({"Connection": "close"})
-        self._fetcher = TranscriptListFetcher(http_client, proxy_config=proxy_config)
+        self._fetcher = TranscriptListFetcher(
+            http_client,
+            proxy_config=proxy_config,
+            enable_cache=enable_cache,
+        )
 
     def fetch(
         self,
