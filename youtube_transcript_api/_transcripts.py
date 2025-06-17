@@ -31,7 +31,7 @@ from ._errors import (
 )
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscriptSnippet:
     text: str
     start: float
@@ -46,7 +46,7 @@ class FetchedTranscriptSnippet:
     """
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscript:
     """
     Represents a fetched transcript. This object is iterable, which allows you to
@@ -72,7 +72,7 @@ class FetchedTranscript:
         return [asdict(snippet) for snippet in self]
 
 
-@dataclass
+@dataclass(slots=True)
 class _TranslationLanguage:
     language: str
     language_code: str
@@ -99,6 +99,16 @@ def _raise_http_errors(response: Response, video_id: str) -> Response:
 
 
 class Transcript:
+    __slots__ = (
+        "_http_client",
+        "video_id",
+        "_url",
+        "language",
+        "language_code",
+        "is_generated",
+        "translation_languages",
+        "_translation_languages_dict",
+    )
     def __init__(
         self,
         http_client: Session,
@@ -180,6 +190,13 @@ class TranscriptList:
     This object represents a list of transcripts. It can be iterated over to list all transcripts which are available
     for a given YouTube video. Also, it provides functionality to search for a transcript in a given language.
     """
+
+    __slots__ = (
+        "video_id",
+        "_manually_created_transcripts",
+        "_generated_transcripts",
+        "_translation_languages",
+    )
 
     def __init__(
         self,
@@ -343,16 +360,31 @@ class TranscriptList:
 
 
 class TranscriptListFetcher:
-    def __init__(self, http_client: Session, proxy_config: Optional[ProxyConfig]):
+    def __init__(
+        self,
+        http_client: Session,
+        proxy_config: Optional[ProxyConfig],
+        enable_cache: bool = True,
+    ):
         self._http_client = http_client
         self._proxy_config = proxy_config
+        self._enable_cache = enable_cache
+        self._cache: Dict[str, TranscriptList] = {}
 
     def fetch(self, video_id: str) -> TranscriptList:
-        return TranscriptList.build(
+        if self._enable_cache and video_id in self._cache:
+            return self._cache[video_id]
+
+        transcript_list = TranscriptList.build(
             self._http_client,
             video_id,
             self._fetch_captions_json(video_id),
         )
+
+        if self._enable_cache:
+            self._cache[video_id] = transcript_list
+
+        return transcript_list
 
     def _fetch_captions_json(self, video_id: str, try_number: int = 0) -> Dict:
         try:
