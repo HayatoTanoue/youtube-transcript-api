@@ -343,16 +343,27 @@ class TranscriptList:
 
 
 class TranscriptListFetcher:
-    def __init__(self, http_client: Session, proxy_config: Optional[ProxyConfig]):
+    def __init__(self, http_client: Session, proxy_config: Optional[ProxyConfig], enable_caching: bool = True):
         self._http_client = http_client
         self._proxy_config = proxy_config
+        self._enable_caching = enable_caching
+        self._transcript_cache = {} if enable_caching else None
 
     def fetch(self, video_id: str) -> TranscriptList:
-        return TranscriptList.build(
+        if self._enable_caching and self._transcript_cache is not None:
+            if video_id in self._transcript_cache:
+                return self._transcript_cache[video_id]
+        
+        transcript_list = TranscriptList.build(
             self._http_client,
             video_id,
             self._fetch_captions_json(video_id),
         )
+        
+        if self._enable_caching and self._transcript_cache is not None:
+            self._transcript_cache[video_id] = transcript_list
+        
+        return transcript_list
 
     def _fetch_captions_json(self, video_id: str, try_number: int = 0) -> Dict:
         try:

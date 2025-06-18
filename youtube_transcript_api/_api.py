@@ -2,6 +2,9 @@ import warnings
 from typing import Optional, Iterable
 
 from requests import Session
+from requests.adapters import HTTPAdapter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Any
 
 from .proxies import ProxyConfig, GenericProxyConfig
 
@@ -13,6 +16,7 @@ class YouTubeTranscriptApi:
         self,
         proxy_config: Optional[ProxyConfig] = None,
         http_client: Optional[Session] = None,
+        enable_caching: bool = True,
     ):
         """
         Note on thread-safety: As this class will initialize a `requests.Session`
@@ -27,9 +31,11 @@ class YouTubeTranscriptApi:
         :param http_client: You can optionally pass in a requests.Session object, if you
             manually want to share cookies between different instances of
             `YouTubeTranscriptApi`, overwrite defaults, specify SSL certificates, etc.
+        :param enable_caching: Whether to enable caching of transcript lists to improve performance
         """
         http_client = Session() if http_client is None else http_client
-        http_client.headers.update({"Accept-Language": "en-US"})
+        
+        self._optimize_http_session(http_client)
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.
         # if cookie_path is not None:
@@ -38,7 +44,7 @@ class YouTubeTranscriptApi:
             http_client.proxies = proxy_config.to_requests_dict()
             if proxy_config.prevent_keeping_connections_alive:
                 http_client.headers.update({"Connection": "close"})
-        self._fetcher = TranscriptListFetcher(http_client, proxy_config=proxy_config)
+        self._fetcher = TranscriptListFetcher(http_client, proxy_config=proxy_config, enable_caching=enable_caching)
 
     def fetch(
         self,
@@ -117,6 +123,88 @@ class YouTubeTranscriptApi:
             Make sure that this is the actual ID, NOT the full URL to the video!
         """
         return self._fetcher.fetch(video_id)
+
+    def _optimize_http_session(self, http_client: Session):
+        """Optimize HTTP session for better performance."""
+        http_client.headers.update({
+            "Accept-Language": "en-US",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"
+        })
+        
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            pool_block=False
+        )
+        
+        http_client.mount("http://", adapter)
+        http_client.mount("https://", adapter)
+
+    def fetch_multiple(
+        self,
+        video_ids: List[str],
+        languages: Iterable[str] = ("en",),
+        preserve_formatting: bool = False,
+        max_workers: int = 4,
+        continue_on_error: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Efficiently fetch transcripts for multiple videos in parallel.
+        
+        :param video_ids: List of video IDs to fetch transcripts for
+        :param languages: Language preference list for each video
+        :param preserve_formatting: Whether to preserve HTML formatting
+        :param max_workers: Maximum number of parallel workers
+        :param continue_on_error: Whether to continue if individual videos fail
+        :return: Dictionary with successful transcripts and failed video IDs
+        """
+        successful_transcripts = {}
+        failed_video_ids = []
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_video_id = {
+                executor.submit(
+                    self._fetch_single_with_error_handling,
+                    video_id,
+                    languages,
+                    preserve_formatting
+                ): video_id
+                for video_id in video_ids
+            }
+            
+            for future in as_completed(future_to_video_id):
+                video_id = future_to_video_id[future]
+                try:
+                    transcript = future.result()
+                    if transcript is not None:
+                        successful_transcripts[video_id] = transcript
+                    else:
+                        failed_video_ids.append(video_id)
+                except Exception as e:
+                    if not continue_on_error:
+                        raise e
+                    failed_video_ids.append(video_id)
+        
+        return {
+            "transcripts": successful_transcripts,
+            "failed_video_ids": failed_video_ids,
+            "success_count": len(successful_transcripts),
+            "total_count": len(video_ids)
+        }
+
+    def _fetch_single_with_error_handling(
+        self,
+        video_id: str,
+        languages: Iterable[str],
+        preserve_formatting: bool
+    ) -> Optional[Any]:
+        """Fetch a single transcript with error handling."""
+        try:
+            return self.fetch(video_id, languages, preserve_formatting)
+        except Exception:
+            return None
 
     @classmethod
     def list_transcripts(cls, video_id, proxies=None):
