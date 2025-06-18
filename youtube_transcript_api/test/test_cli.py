@@ -340,3 +340,53 @@ class TestYouTubeTranscriptCli(TestCase):
             proxy_config=None,
             cookie_path="blahblah.txt",
         )
+
+    def test_argument_parsing__search_options(self):
+        """Test search-related argument parsing."""
+        parsed_args = YouTubeTranscriptCli(
+            "v1 --search python --regex --case-sensitive".split()
+        )._parse_args()
+        self.assertEqual(parsed_args.video_ids, ["v1"])
+        self.assertEqual(parsed_args.search, "python")
+        self.assertTrue(parsed_args.regex)
+        self.assertTrue(parsed_args.case_sensitive)
+
+        parsed_args = YouTubeTranscriptCli(
+            "v1 --search machine_learning".split()
+        )._parse_args()
+        self.assertEqual(parsed_args.search, "machine_learning")
+        self.assertFalse(parsed_args.regex)
+        self.assertFalse(parsed_args.case_sensitive)
+
+    def test_run__search_functionality(self):
+        """Test CLI search functionality."""
+        from youtube_transcript_api import SearchResult
+
+        mock_search_results = [
+            SearchResult(
+                matched_text="test",
+                start_time=0.0,
+                end_time=2.0,
+                context="Hey, this is just a test transcript",
+            )
+        ]
+
+        self.transcript_mock.fetch.return_value.search_in_transcript = MagicMock(
+            return_value=mock_search_results
+        )
+
+        output = YouTubeTranscriptCli("v1 --search test".split()).run()
+
+        self.assertIn("Search results for video v1", output)
+        self.assertIn("[0.00s - 2.00s]", output)
+        self.assertIn("test", output)
+
+    def test_run__search_no_results(self):
+        """Test CLI search with no results."""
+        self.transcript_mock.fetch.return_value.search_in_transcript = MagicMock(
+            return_value=[]
+        )
+
+        output = YouTubeTranscriptCli("v1 --search nonexistent".split()).run()
+
+        self.assertIn("No search results found for video v1", output)

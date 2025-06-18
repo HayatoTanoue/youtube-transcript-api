@@ -35,6 +35,7 @@ class YouTubeTranscriptCli:
 
         transcripts = []
         exceptions = []
+        search_results_output = []
 
         ytt_api = YouTubeTranscriptApi(
             proxy_config=proxy_config,
@@ -45,6 +46,19 @@ class YouTubeTranscriptCli:
                 transcript_list = ytt_api.list(video_id)
                 if parsed_args.list_transcripts:
                     transcripts.append(transcript_list)
+                elif parsed_args.search:
+                    fetched_transcript = self._fetch_transcript(
+                        parsed_args,
+                        transcript_list,
+                    )
+                    search_results = fetched_transcript.search_in_transcript(
+                        parsed_args.search,
+                        case_sensitive=parsed_args.case_sensitive,
+                        use_regex=parsed_args.regex,
+                    )
+                    search_results_output.append(
+                        self._format_search_results(search_results, video_id)
+                    )
                 else:
                     transcripts.append(
                         self._fetch_transcript(
@@ -53,7 +67,13 @@ class YouTubeTranscriptCli:
                         )
                     )
             except Exception as exception:
-                exceptions.append(exception)
+                if parsed_args.search:
+                    search_results_output.append(str(exception))
+                else:
+                    exceptions.append(exception)
+
+        if parsed_args.search:
+            return "\n\n".join(search_results_output)
 
         print_sections = [str(exception) for exception in exceptions]
         if transcripts:
@@ -90,6 +110,20 @@ class YouTubeTranscriptCli:
             transcript = transcript.translate(parsed_args.translate)
 
         return transcript.fetch()
+
+    def _format_search_results(self, search_results, video_id):
+        """Format search results for CLI output."""
+        if not search_results:
+            return f"No search results found for video {video_id}"
+
+        formatted_results = [f"Search results for video {video_id}:"]
+        for i, result in enumerate(search_results, 1):
+            formatted_results.append(
+                f"\n{i}. [{result.start_time:.2f}s - {result.end_time:.2f}s] "
+                f'"{result.matched_text}"\n   Context: {result.context}'
+            )
+
+        return "\n".join(formatted_results)
 
     def _parse_args(self):
         parser = argparse.ArgumentParser(
@@ -175,6 +209,26 @@ class YouTubeTranscriptCli:
             default="",
             metavar="URL",
             help="Use the specified HTTPS proxy.",
+        )
+        parser.add_argument(
+            "--search",
+            default="",
+            type=str,
+            help="Search for a keyword or phrase within the transcript text.",
+        )
+        parser.add_argument(
+            "--regex",
+            action="store_const",
+            const=True,
+            default=False,
+            help="Treat the search term as a regular expression pattern.",
+        )
+        parser.add_argument(
+            "--case-sensitive",
+            action="store_const",
+            const=True,
+            default=False,
+            help="Perform case-sensitive search (default is case-insensitive).",
         )
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.

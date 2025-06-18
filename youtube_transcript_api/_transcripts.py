@@ -47,6 +47,27 @@ class FetchedTranscriptSnippet:
 
 
 @dataclass
+class SearchResult:
+    """
+    Represents a search result from transcript search functionality.
+    """
+
+    matched_text: str
+    start_time: float
+    """
+    The timestamp at which this search result appears on screen in seconds.
+    """
+    end_time: float
+    """
+    The end timestamp of this search result in seconds.
+    """
+    context: str
+    """
+    The context around the matched text (10 words before and after).
+    """
+
+
+@dataclass
 class FetchedTranscript:
     """
     Represents a fetched transcript. This object is iterable, which allows you to
@@ -70,6 +91,95 @@ class FetchedTranscript:
 
     def to_raw_data(self) -> List[Dict]:
         return [asdict(snippet) for snippet in self]
+
+    def search_in_transcript(
+        self, keyword: str, case_sensitive: bool = False, use_regex: bool = False
+    ) -> List["SearchResult"]:
+        """
+        Search for keywords within the transcript text.
+
+        :param keyword: The keyword or pattern to search for
+        :param case_sensitive: Whether to perform case-sensitive search (default: False)
+        :param use_regex: Whether to treat keyword as a regular expression (default: False)
+        :return: List of SearchResult objects containing matches with context
+        """
+        if not keyword.strip():
+            return []
+
+        results = []
+
+        try:
+            if use_regex:
+                flags = 0 if case_sensitive else re.IGNORECASE
+                pattern = re.compile(keyword, flags)
+            else:
+                escaped_keyword = re.escape(keyword)
+                flags = 0 if case_sensitive else re.IGNORECASE
+                pattern = re.compile(escaped_keyword, flags)
+        except re.error as e:
+            raise ValueError(f"Invalid regular expression pattern: {e}")
+
+        full_text_parts = []
+        snippet_boundaries = []
+        current_pos = 0
+
+        for snippet in self.snippets:
+            snippet_text = snippet.text
+            full_text_parts.append(snippet_text)
+            snippet_boundaries.append(
+                {
+                    "start_pos": current_pos,
+                    "end_pos": current_pos + len(snippet_text),
+                    "snippet": snippet,
+                }
+            )
+            current_pos += len(snippet_text) + 1
+            full_text_parts.append(" ")
+
+        full_text = "".join(full_text_parts)
+
+        for match in pattern.finditer(full_text):
+            match_start = match.start()
+            matched_text = match.group()
+
+            containing_snippet = None
+            for boundary in snippet_boundaries:
+                if boundary["start_pos"] <= match_start < boundary["end_pos"]:
+                    containing_snippet = boundary["snippet"]
+                    break
+
+            if containing_snippet is None:
+                continue
+
+            words = full_text.split()
+            match_words = matched_text.split()
+
+            match_word_start = None
+            for i in range(len(words) - len(match_words) + 1):
+                if (
+                    " ".join(words[i : i + len(match_words)]).lower()
+                    == matched_text.lower()
+                ):
+                    match_word_start = i
+                    break
+
+            if match_word_start is not None:
+                context_start = max(0, match_word_start - 10)
+                context_end = min(len(words), match_word_start + len(match_words) + 10)
+                context = " ".join(words[context_start:context_end])
+            else:
+                context = matched_text
+
+            results.append(
+                SearchResult(
+                    matched_text=matched_text,
+                    start_time=containing_snippet.start,
+                    end_time=containing_snippet.start + containing_snippet.duration,
+                    context=context,
+                )
+            )
+
+        return results
 
 
 @dataclass
