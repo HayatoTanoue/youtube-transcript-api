@@ -14,6 +14,7 @@ from youtube_transcript_api.formatters import (
     WebVTTFormatter,
     PrettyPrintFormatter,
     FormatterLoader,
+    CSVFormatter,
 )
 
 
@@ -157,3 +158,47 @@ class TestFormatters(TestCase):
     def test_formatter_loader__unknown_format(self):
         with self.assertRaises(FormatterLoader.UnknownFormatterType):
             FormatterLoader().load("png")
+
+    def test_csv_formatter(self):
+        content = CSVFormatter().format_transcript(self.transcript)
+        lines = content.strip().split('\n')
+        
+        self.assertEqual(lines[0], 'start_time,end_time,duration,text')
+        
+        self.assertEqual(lines[1], '0.0,1.5,1.5,Test line 1')
+        
+        self.assertEqual(lines[2], '1.5,3.5,2.0,line between')
+        
+        self.assertEqual(lines[3], '2.5,5.75,3.25,testing the end line')
+
+    def test_csv_formatter_many(self):
+        formatter = CSVFormatter()
+        content = formatter.format_transcripts(self.transcripts)
+        lines = content.strip().split('\n')
+        
+        self.assertEqual(len(lines), 7)
+        
+        self.assertEqual(lines[0], 'start_time,end_time,duration,text')
+        
+        data_lines = lines[1:]
+        self.assertEqual(len(data_lines), 6)
+
+    def test_csv_formatter_with_commas_and_quotes(self):
+        transcript_with_special_chars = FetchedTranscript(
+            snippets=[
+                FetchedTranscriptSnippet(text='Text with, comma', start=0.0, duration=1.0),
+                FetchedTranscriptSnippet(text='Text with "quotes"', start=1.0, duration=1.0),
+                FetchedTranscriptSnippet(text='Text with, comma and "quotes"', start=2.0, duration=1.0),
+            ],
+            language="English",
+            language_code="en", 
+            is_generated=True,
+            video_id="12345",
+        )
+        
+        content = CSVFormatter().format_transcript(transcript_with_special_chars)
+        lines = content.strip().split('\n')
+        
+        self.assertEqual(lines[1], '0.0,1.0,1.0,"Text with, comma"')
+        self.assertEqual(lines[2], '1.0,2.0,1.0,"Text with ""quotes"""')
+        self.assertEqual(lines[3], '2.0,3.0,1.0,"Text with, comma and ""quotes"""')

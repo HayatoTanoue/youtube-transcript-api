@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 
 import pprint
@@ -177,6 +179,44 @@ class WebVTTFormatter(_TextBasedFormatter):
         return "{}\n{}".format(time_text, snippet.text)
 
 
+class CSVFormatter(Formatter):
+    def format_transcript(self, transcript: FetchedTranscript, **kwargs) -> str:
+        """Converts a transcript into CSV format.
+        
+        :param transcript:
+        :return: A CSV string representation of the transcript with columns:
+                 start_time, end_time, duration, text
+        """
+        output = io.StringIO()
+        writer = csv.writer(output, lineterminator='\n')
+        
+        writer.writerow(['start_time', 'end_time', 'duration', 'text'])
+        
+        for snippet in transcript:
+            end_time = snippet.start + snippet.duration
+            writer.writerow([snippet.start, end_time, snippet.duration, snippet.text])
+        
+        return output.getvalue()
+    
+    def format_transcripts(self, transcripts: List[FetchedTranscript], **kwargs) -> str:
+        """Converts a list of transcripts into CSV format.
+        
+        :param transcripts:
+        :return: A CSV string representation of all transcripts combined
+        """
+        output = io.StringIO()
+        writer = csv.writer(output, lineterminator='\n')
+        
+        writer.writerow(['start_time', 'end_time', 'duration', 'text'])
+        
+        for transcript in transcripts:
+            for snippet in transcript:
+                end_time = snippet.start + snippet.duration
+                writer.writerow([snippet.start, end_time, snippet.duration, snippet.text])
+        
+        return output.getvalue()
+
+
 class FormatterLoader:
     TYPES = {
         "json": JSONFormatter,
@@ -184,6 +224,7 @@ class FormatterLoader:
         "text": TextFormatter,
         "webvtt": WebVTTFormatter,
         "srt": SRTFormatter,
+        "csv": CSVFormatter,
     }
 
     class UnknownFormatterType(Exception):
