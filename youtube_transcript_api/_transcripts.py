@@ -4,6 +4,7 @@ from itertools import chain
 
 from html import unescape
 from typing import List, Dict, Iterator, Iterable, Pattern, Optional
+from functools import lru_cache
 
 from defusedxml import ElementTree
 
@@ -31,7 +32,7 @@ from ._errors import (
 )
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscriptSnippet:
     text: str
     start: float
@@ -46,7 +47,7 @@ class FetchedTranscriptSnippet:
     """
 
 
-@dataclass
+@dataclass(slots=True)
 class FetchedTranscript:
     """
     Represents a fetched transcript. This object is iterable, which allows you to
@@ -72,7 +73,7 @@ class FetchedTranscript:
         return [asdict(snippet) for snippet in self]
 
 
-@dataclass
+@dataclass(slots=True)
 class _TranslationLanguage:
     language: str
     language_code: str
@@ -469,9 +470,11 @@ class _TranscriptParser:
     def __init__(self, preserve_formatting: bool = False):
         self._html_regex = self._get_html_regex(preserve_formatting)
 
-    def _get_html_regex(self, preserve_formatting: bool) -> Pattern[str]:
+    @staticmethod
+    @lru_cache(maxsize=2)
+    def _get_html_regex(preserve_formatting: bool) -> Pattern[str]:
         if preserve_formatting:
-            formats_regex = "|".join(self._FORMATTING_TAGS)
+            formats_regex = "|".join(_TranscriptParser._FORMATTING_TAGS)
             formats_regex = r"<\/?(?!\/?(" + formats_regex + r")\b).*?\b>"
             html_regex = re.compile(formats_regex, re.IGNORECASE)
         else:

@@ -333,7 +333,7 @@ class TestYouTubeTranscriptCli(TestCase):
     )
     def test_run__cookies(self):
         YouTubeTranscriptCli(
-            ("v1 v2 --languages de en " "--cookies blahblah.txt").split()
+            ("v1 v2 --languages de en --cookies blahblah.txt").split()
         ).run()
 
         YouTubeTranscriptApi.__init__.assert_any_call(

@@ -1,5 +1,6 @@
 import warnings
 from typing import Optional, Iterable
+from functools import lru_cache
 
 from requests import Session
 
@@ -29,6 +30,7 @@ class YouTubeTranscriptApi:
             `YouTubeTranscriptApi`, overwrite defaults, specify SSL certificates, etc.
         """
         http_client = Session() if http_client is None else http_client
+        http_client.trust_env = False
         http_client.headers.update({"Accept-Language": "en-US"})
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.
@@ -39,6 +41,7 @@ class YouTubeTranscriptApi:
             if proxy_config.prevent_keeping_connections_alive:
                 http_client.headers.update({"Connection": "close"})
         self._fetcher = TranscriptListFetcher(http_client, proxy_config=proxy_config)
+        self._cached_fetch = lru_cache(maxsize=128)(self._fetcher.fetch)
 
     def fetch(
         self,
@@ -116,7 +119,7 @@ class YouTubeTranscriptApi:
         :param video_id: the ID of the video you want to retrieve the transcript for.
             Make sure that this is the actual ID, NOT the full URL to the video!
         """
-        return self._fetcher.fetch(video_id)
+        return self._cached_fetch(video_id)
 
     @classmethod
     def list_transcripts(cls, video_id, proxies=None):
@@ -226,19 +229,29 @@ class YouTubeTranscriptApi:
 
         assert isinstance(video_ids, list), "`video_ids` must be a list of strings"
 
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         data = {}
         unretrievable_videos = []
 
-        for video_id in video_ids:
+        def worker(v_id):
             try:
-                data[video_id] = cls.get_transcript(
-                    video_id, languages, proxies, preserve_formatting
+                return v_id, cls.get_transcript(
+                    v_id, languages, proxies, preserve_formatting
                 )
-            except Exception as exception:
+            except Exception as exc:
                 if not continue_after_error:
-                    raise exception
+                    raise exc
+                return v_id, exc
 
-                unretrievable_videos.append(video_id)
+        with ThreadPoolExecutor(max_workers=len(video_ids)) as executor:
+            futures = [executor.submit(worker, vid) for vid in video_ids]
+            for future in as_completed(futures):
+                vid, result = future.result()
+                if isinstance(result, Exception):
+                    unretrievable_videos.append(vid)
+                else:
+                    data[vid] = result
 
         return data, unretrievable_videos
 
