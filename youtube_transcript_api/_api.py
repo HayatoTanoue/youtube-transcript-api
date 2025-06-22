@@ -34,7 +34,7 @@ class YouTubeTranscriptApi:
         :param enable_caching: Whether to enable caching of transcript lists to improve performance
         """
         http_client = Session() if http_client is None else http_client
-        
+
         self._optimize_http_session(http_client)
         # Cookie auth has been temporarily disabled, as it is not working properly with
         # YouTube's most recent changes.
@@ -44,7 +44,9 @@ class YouTubeTranscriptApi:
             http_client.proxies = proxy_config.to_requests_dict()
             if proxy_config.prevent_keeping_connections_alive:
                 http_client.headers.update({"Connection": "close"})
-        self._fetcher = TranscriptListFetcher(http_client, proxy_config=proxy_config, enable_caching=enable_caching)
+        self._fetcher = TranscriptListFetcher(
+            http_client, proxy_config=proxy_config, enable_caching=enable_caching
+        )
 
     def fetch(
         self,
@@ -126,19 +128,17 @@ class YouTubeTranscriptApi:
 
     def _optimize_http_session(self, http_client: Session):
         """Optimize HTTP session for better performance."""
-        http_client.headers.update({
-            "Accept-Language": "en-US",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"
-        })
-        
-        adapter = HTTPAdapter(
-            pool_connections=10,
-            pool_maxsize=20,
-            pool_block=False
+        http_client.headers.update(
+            {
+                "Accept-Language": "en-US",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
+            }
         )
-        
+
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20, pool_block=False)
+
         http_client.mount("http://", adapter)
         http_client.mount("https://", adapter)
 
@@ -152,7 +152,7 @@ class YouTubeTranscriptApi:
     ) -> Dict[str, Any]:
         """
         Efficiently fetch transcripts for multiple videos in parallel.
-        
+
         :param video_ids: List of video IDs to fetch transcripts for
         :param languages: Language preference list for each video
         :param preserve_formatting: Whether to preserve HTML formatting
@@ -162,18 +162,18 @@ class YouTubeTranscriptApi:
         """
         successful_transcripts = {}
         failed_video_ids = []
-        
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_video_id = {
                 executor.submit(
                     self._fetch_single_with_error_handling,
                     video_id,
                     languages,
-                    preserve_formatting
+                    preserve_formatting,
                 ): video_id
                 for video_id in video_ids
             }
-            
+
             for future in as_completed(future_to_video_id):
                 video_id = future_to_video_id[future]
                 try:
@@ -186,19 +186,16 @@ class YouTubeTranscriptApi:
                     if not continue_on_error:
                         raise e
                     failed_video_ids.append(video_id)
-        
+
         return {
             "transcripts": successful_transcripts,
             "failed_video_ids": failed_video_ids,
             "success_count": len(successful_transcripts),
-            "total_count": len(video_ids)
+            "total_count": len(video_ids),
         }
 
     def _fetch_single_with_error_handling(
-        self,
-        video_id: str,
-        languages: Iterable[str],
-        preserve_formatting: bool
+        self, video_id: str, languages: Iterable[str], preserve_formatting: bool
     ) -> Optional[Any]:
         """Fetch a single transcript with error handling."""
         try:
